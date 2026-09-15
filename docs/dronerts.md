@@ -1,10 +1,10 @@
 # DroneRTS integration
 
-The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a continuous drone simulation. This document records the extraction context as of 2026-09-15. The standalone runtime and its DroneRTS integration are not implemented.
+The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a continuous drone simulation. DroneRTS is the canonical usage and integration test case; its rules remain application-specific. This document records the extraction context as of 2026-09-15. The standalone runtime and its DroneRTS integration are not implemented.
 
 ## Boundary
 
-| Standalone library | DroneRTS adapter/application |
+| Standalone library | DroneRTS environment/application |
 | --- | --- |
 | Native session lifecycle and compaction recovery | Existing native Codex pilots and their configured model |
 | Versioned received goal and delivery boundary | Actual per-drone instruction receipt and match lifecycle |
@@ -14,6 +14,10 @@ The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a
 | Workspace integration | Existing private atomic files and storage quotas |
 
 Keep the simulation and its rules in DroneRTS. The library does not acquire battlefield geometry, opponent telemetry, hidden locators, automatic classifiers or global pathfinding.
+
+The environment combines DroneRTS sensor acquisition, native radio events and existing command/job interfaces. Its state schema owns pose, velocity, held equipment and cargo. Its source profile requires fresh camera acquisition at model-facing steps; the generic library permits environments with no images. Existing `observe`, `wait` and `exchange` names can remain application aliases for the shared step contract.
+
+Native actor creation, tool delivery and compaction behavior go through the [Codex harness adapter](harnesses/codex.md). Preserve the canonical application's child actors; qualify that mode separately from dedicated root sessions. Do not move game-specific launch gating or tactical coordination into the harness module.
 
 ## Existing behavior
 
@@ -52,8 +56,8 @@ Source: [QA investigation, first fresh single haul](https://github.com/DanMcIner
 
 ## Integration sequence
 
-1. Implement and test the [portable contract](../DESIGN.md) using a deterministic fake robot and native-session test doubles.
+1. Implement and test the [portable contract](../DESIGN.md) using a deterministic API-only environment and native-session test doubles; prove the core works without game or robot fields.
 2. Implement the Codex adapter, including manual/automatic compaction and actual child-session lifecycle.
-3. Map existing DroneRTS tools through the shared boundary without changing simulation behavior.
+3. Map existing DroneRTS tools and data sources through the environment boundary without changing simulation behavior.
 4. Prove existing control, conservation, isolation and cancellation checks still pass.
 5. Run bounded real-agent trials before making claims about recovered understanding or autonomous progress.

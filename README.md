@@ -2,36 +2,39 @@
 
 **A small nervous system for coding agents.**
 
-Nervelet connects native coding agents such as Codex and Claude Code to robots and simulations: fresh observations in, bounded commands out, and continuous local execution between decisions.
+Nervelet is a library for autonomous coding-agent sessions that receive continuously changing data and pursue a goal. Sources can be robot sensors, simulation state, APIs or event feeds. Commands and local jobs are optional.
 
-**Status:** design and implementation specification. The runtime and adapters are not implemented yet.
+**Status:** architecture and implementation specification. Runtime code and adapters are not implemented.
 
-## The loop
+## Architecture
 
 ```mermaid
 flowchart LR
-    S["Fresh sensors, self-state, jobs and goal"] --> A["Native agent session"]
-    A --> T["step: observe, batch or wait"]
-    T --> S
-    T --> J["Local job"]
-    J --> C["Continuous control"]
-    C -. "Progress and events" .-> S
+    E["Environment: APIs, sensors, events"] --> N["Nervelet: delivery and lifecycle"]
+    N <--> H["Harness adapter: Codex or Claude Code"]
+    H <--> A["Native agent session and workspace"]
+    N --> X["Environment commands and jobs"]
+    X -. "Progress and results" .-> E
 ```
 
-The world keeps moving while the agent thinks. Nervelet makes observation time, ongoing work and the received goal explicit.
+Data acquisition and valid jobs continue while the model thinks. Nervelet delivers bounded, timestamped context at decision boundaries; it does not call the model for every sample.
 
-## Small by design
+## Keep it small
 
-- **One session per robot.** Reuse native tools, files and compaction.
-- **Two tools.** `robot.step()` observes, batches compatible commands or waits; `robot.cancel()` interrupts work.
-- **Fresh evidence.** Each step returns timestamped sensors, held items, velocity, jobs, messages and the exact received goal.
-- **Simple continuity.** Restore operating instructions and refresh state after compaction; preserve scripts and important commitments in private files.
-- **Three owners.** The native agent adapter owns its session, the robot adapter owns sensing/control, and the core coordinates delivery and lifecycle.
+- **Core library:** one session supervisor, two integration boundaries: harness and environment.
+- **Native harness modules:** preserve sessions, tools, files and compaction; handle each host's quirks explicitly.
+- **Compact context:** exact received goal, latest observations, current execution status and unread events.
+- **Simple recovery:** restore exact instructions and essential files; refresh observations before new commands.
+- **Optional packaging:** plugins expose tools/hooks; Orchflows can launch and assess bounded runs.
 
-## Read next
+DroneRTS is the canonical integration and test case. Its game rules and vehicle fields stay in its environment adapter. An API-only loop needs no robot schema or camera.
 
-- [Design](DESIGN.md): interfaces, examples, staleness, goal changes, compaction and acceptance criteria.
-- [DroneRTS integration](docs/dronerts.md): the originating application, existing behavior and recorded timing evidence.
-- [Development instructions](AGENTS.md): scope and implementation constraints.
+## Read
 
-Nervelet is named for a small nerve: the connection carrying observations and actions between an agent and its environment.
+- [Design](DESIGN.md): ownership, interfaces, timing and recovery.
+- [Architecture choices and related projects](docs/architecture-options.md): library, plugin, Orchflows and dependency decisions.
+- [Codex adapter](docs/harnesses/codex.md) · [Claude Code adapter](docs/harnesses/claude-code.md)
+- [DroneRTS integration](docs/dronerts.md)
+- [Development instructions](AGENTS.md)
+
+Nervelet: the small connection carrying observations and actions between an agent and its environment.

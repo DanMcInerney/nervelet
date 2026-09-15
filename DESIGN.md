@@ -1,224 +1,222 @@
-# Design: the robot loop
+# Design: continuous environments, native agent sessions
 
-**Specification · 2026-09-15 · Runtime implementation pending.**
+**Specification · 2026-09-15 · Implementation pending.**
 
-Start with the [README](README.md). [DroneRTS integration notes](docs/dronerts.md) describe the originating application.
+Nervelet supervises a native coding-agent session pursuing a goal in a changing environment. A robot is one environment; an API monitor is another. The core contains no vehicle, camera, game, transport-specific or model-specific logic.
 
-Use one persistent native agent session per robot, a timestamped observation bundle, asynchronous jobs, and a private workspace. Keep the coordinator small enough to audit. Codex and Claude Code retain their own inference, tool execution and compaction machinery.
+A **harness** is the existing agent runtime, such as Codex or Claude Code. It already owns inference, native tool execution, conversation history and compaction. Nervelet connects that runtime to ongoing external data and work.
 
-**The agent knows the latest delivered evidence. It cannot know the instantaneous world while it is thinking.** Make that limit explicit, and let local controllers handle continuous execution.
+## 1. Packaging decision
 
-## 1. Two loops, different speeds
+Build a small TypeScript library, embedded in an application or hosted by a thin process. Use one package with module exports initially. A plugin is an optional installer for the tool bridge and native hooks. An Orchflows workflow can configure, launch and assess a run.
 
-```mermaid
-flowchart LR
-    subgraph Agent["Native agent session"]
-        A["Instructions + goal + history + latest bundle"] --> B["Model decides"]
-        B --> C["robot.step: commands, observe, or wait"]
-        C --> A
-        B <--> W["Private scripts and working.md"]
-    end
-    subgraph Robot["Continuous robot execution"]
-        J["Admitted job"] --> K["Controller reads local sensors"]
-        K --> L["Actuate and report progress"]
-        L --> K
-    end
-    C --> J
-    L -. "State and events at next step" .-> A
-```
-
-A **decision cycle** is model output → tool execution → returned evidence → another model decision. It can contain several tool calls. A physical job can span many cycles.
-
-During inference, local jobs and the world continue. New observations and messages become model input at supported runtime boundaries; they do not continuously rewrite an in-progress inference. When the agent has no immediate work, it requests a bounded wait. Events wake it early; the timeout ensures visual re-observation even when nothing generates an event.
-
-A native agent finishing a response does not finish the robot's mission. The coordinator resumes an active mission on the next event or observation deadline, with one inference invocation active per robot. Completion, Stop, errors and budget exhaustion are explicit lifecycle states; do not endlessly restart a failing session.
-
-## 2. Direct answers
-
-| Question | Answer |
-| --- | --- |
-| What information does the model receive? | Native instructions, enabled tool schemas, current goal, conversation or compacted history, returned text/images, and files it reads. Files are not automatically all in context. |
-| Can it batch actions? | Yes, through an explicit robot batch. Native runtimes also support multiple calls, but their scheduling differs. A robot batch defines predictable admission and one shared observation boundary. |
-| Does it understand its loop? | It can reason from the supplied contract and receipts. It has no privileged knowledge of execution progress, hidden sensors or actual latency. Verify behavior rather than assuming understanding. |
-| Does it know how long movement takes? | Admission latency and travel duration are separate. Return job progress and measured timestamps; an ETA, when available, is an estimate. `await submit()` means admitted, not arrived. |
-| Does fresh sensor data include held items? | Yes: repeat current own inventory/equipment, cargo, resources and service status alongside pose, velocity and jobs. |
-| Does every sensor update include a camera image? | High-rate controller updates need not. Each model-facing robot step attempts a fresh image for a camera-enabled profile. Native file reads do not implicitly capture the world. |
-| Can it tell it is still moving? | Supply both physical velocity and execution state. A blocked/cancelled job may still be braking; a running job can be stationary. |
-| Can it remember a moving enemy? | As a dated sighting or hypothesis. A remembered location is not current telemetry. New evidence must support any updated position. |
-
-The native tool-result cycle and session continuation are documented in [Codex App Server](https://learn.chatgpt.com/docs/app-server) and the [Claude Agent SDK loop](https://code.claude.com/docs/en/agent-sdk/agent-loop). Robot sensing and execution semantics are this library's responsibility.
-
-## 3. Single ownership
-
-Three modules; ordinary files provide storage.
-
-| Module | Owns | Interface responsibility |
-| --- | --- | --- |
-| `agent/codex` or `agent/claude-code` | Native session, instruction installation, tool registration, continuation and compaction notifications | Expose robot tools; report lifecycle; restore exact instructions through supported native mechanisms. |
-| `core` | Per-robot received goal, lifecycle, delivery cursor and refresh flag | Validate the envelope, coordinate delivery, wake the session, assemble one bundle. It does not interpret the scene or plan actions. |
-| `robot/<profile>` | Sensing, calibration, command schemas, execution records, actuator ownership and limits | Acquire permitted observations; admit/cancel commands; report jobs/events; run local control. |
-
-The native workspace holds authored code and one optional `working.md`. Reuse existing isolated storage and queues. Core needs small records, not a memory database.
-
-Generate tool definitions and operating instructions from the robot profile's canonical definitions. Do not independently copy units, limits or command semantics into several prompts. Profile changes are versioned and force refresh.
-
-Keep the portable boundary narrow: typed commands/results and multimodal bundles, transported through MCP or the backend's custom tools. Native filesystem and execution features remain available **within the robot's configured permissions**. All actuator access, including agent-authored scripts, goes through the same robot adapter.
-
-## 4. Two tools
-
-```ts
-robot.step({})                                  // observe now
-robot.step({ waitMs: 2000 })                    // event or bounded timeout
-robot.step({
-  goalVersion: 7,
-  commands: [
-    { id: "c18", kind: "move", args: { /* profile-defined */ } },
-    { id: "c19", kind: "send", args: { /* independent message */ } }
-  ]
-})
-robot.cancel({ jobId: "j12" })                  // urgent cancellation
-```
-
-`step` has three forms: observe, wait, or command batch. Do not mix a wait with commands. The profile defines command kinds and limits; start with at most eight compatible commands. Domain convenience tools may call this same implementation.
-
-**Batch contract:**
-
-- Check compatibility, goal version and capabilities before admission. Return an outcome for every entry.
-- Admit entries in listed order; do not wait for physical completion between entries. Actual work may overlap.
-- One writer per actuator resource. For a drone, one movement writer. Replacement must explicitly identify the work being replaced.
-- Admission failures do not roll back earlier effects. A newly purchased capability is usable after its receipt and refreshed capability state.
-- Completion dependencies belong in an ordered job or an authored routine. An operation needing an intermediate image requires another step.
-- Use command IDs for bounded duplicate detection at the effect-owning adapter. Never automatically replay an uncertain mutation; query its recorded outcome. An expired/unknown receipt remains unknown.
-
-Cancellation takes effect before waiting for sensors or encoding an image. External Stop reaches the controller independently of the model and the normal tool queue.
-
-### Every step returns
-
-| Section | Compact contents |
-| --- | --- |
-| Header | Session/clock epoch, sequence, schema/profile version, lifecycle and delivery time. |
-| Goal | Exact currently received goal text, version and status. Keep goals brief when authoring; never silently summarize an incoming instruction. |
-| Results | Per-command admitted/rejected outcome, command/job IDs and reasons. |
-| Self | Timestamped pose, velocity, orientation, held items/equipment, relevant resources/services and storage capacity. |
-| Samples | Sensor values/images, acquisition times, frame/units/calibration references and validity. |
-| Jobs | Active work: ID, owner, state, goal version, progress/reason and compact command/source reference. Terminal transitions also enter the event queue. |
-| Events | Bounded ordered slice of unread messages/transitions, cursor and `hasMore`. |
-
-The image is an image content block, not base64 pasted into text. Different sensors may have different acquisition times; a bundle is a delivery envelope, not a claim of simultaneous measurement. Missing capture returns an explicit error, never a relabeled old frame.
-
-Sensor samples use a **latest-value slot**: obsolete intermediate frames can be replaced while the model thinks. Unread messages and terminal events use a **bounded queue**: preserve them until delivery, with backpressure at capacity. Inclusion is distinct from understanding, agreement and completed action. Transport retries preserve event IDs; only acknowledged included events advance the cursor.
-
-## 5. Staleness without a memory system
-
-Use three simple rules:
-
-1. **Self-state is refreshed.** Each step is self-contained for current state; do not require a previous delta baseline.
-2. **World claims retain their evidence time.** “Drone seen in image 42 at t=100” stays historical until observed again. A later conversation summary or repeated peer report does not refresh it.
-3. **Controllers check current execution conditions.** A fresh-looking model receipt cannot substitute for ongoing local sensing.
-
-Track monotonic acquisition/delivery times in a named clock epoch. For simulation, also carry simulation time: pause or speed changes affect physical aging differently from host delays. Never subtract timestamps from unrelated robot clocks without a declared synchronization mapping.
-
-`ageAtDelivery` is only age at delivery. Actual evidence age when a command is admitted includes subsequent inference and transport delay. The adapter can measure that delay; the model cannot predict it reliably.
-
-For commands that require recent evidence, the robot profile may require an observation reference and a maximum admissible age. Check these at admission and reject with a fresh bundle when stale. This bounds age, not whether an object remained in place. Do not impose one universal expiry on goals, maps, radio reports and moving objects.
-
-### Worked moving-world example
-
-Illustrative times, at 1×; this is not a new playtest.
-
-| Time | What happens | Correct interpretation |
-| --- | --- | --- |
-| 100.0 | Image 42 shows another drone. Own route J12 is running. | The sighting is evidence at 100.0. |
-| 100.2–106.0 | The model reasons and reads a script. Both drones can move. | No new visual observation has arrived. |
-| 106.1 | The model submits a command requiring image age ≤1 s. | Adapter rejects it as stale; returns image 43 and current jobs/self. |
-| 106.3 | Image 43 no longer shows the other drone. | Its current position is unknown; absence from view is not proof it disappeared. |
-
-If inference consistently takes longer than a task's reaction window, repeated observations alone cannot solve it. Use an explicitly available local perception/control routine, or accept the capability limit. The library supplies no implicit tracking, object classifier or global world model.
-
-A [recorded DroneRTS trial](docs/dronerts.md#recorded-timing-evidence) measured multi-second decision gaps even without compaction. This motivates explicit timestamps and execution state; it does not validate this library.
-
-## 6. Compaction: preserve sources, refresh facts
-
-Do not require the compactor to preserve exact text. Preserve authoritative sources outside summarized history and restore them.
-
-| Information | Exact source | Delivery policy |
-| --- | --- | --- |
-| Identity, loop contract, units, limits, tool semantics | Versioned robot profile and native instruction configuration | Install at startup; preserve/reinstall after compaction, resume or profile change. |
-| Received goal | Core's exact per-robot goal record | Repeat exact text/version each robot step. |
-| Running command arguments, IDs, code version/hash | Robot execution record and private files | Compact status each step; exact active specification on recovery or explicit lookup. |
-| Code and essential commitments | Private files, optionally exact quotations in `working.md` | Exact bytes persist; restore the small note after recovery, read other files on demand. |
-| Current world/self-state | Sensors and robot state | Acquire again. Old snapshots do not become restored current facts. |
-| Reasoning, hypotheses and history | Native context and optional note | May summarize, retaining source/time/uncertainty where still relevant. |
-
-**Repeat the small goal and current state; retain the operating contract in native instruction context.** Do not append the whole manual, scratchpad or transcript every step. A profile hash alone cannot teach forgotten semantics.
+The [architecture comparison](docs/architecture-options.md) explains these choices. Neither plugin installation nor a workflow prompt supplies continuous data acquisition by itself.
 
 ```mermaid
 flowchart TD
-    A["Startup, resume, compaction or profile change"] --> B["Mark refresh required"]
-    B --> C["Native adapter ensures exact instructions and schemas"]
-    C --> D["Next robot step: withhold new commands"]
-    D --> E["Return fresh bundle, exact goal, active specs and saved note"]
-    E --> F["Clear refresh flag after delivery"]
-    F --> G["Model decides again"]
-    H["Valid local jobs continue"] -.-> E
+    O["Application, CLI or optional Orchflows workflow"] --> C["Nervelet core"]
+    C <--> H["Harness adapter"]
+    H <--> A["Native agent session"]
+    A <--> W["Native private workspace"]
+    C <--> E["Environment adapter"]
+    E <--> S["Continuous data sources"]
+    E <--> J["Commands and local jobs"]
+    P["Optional plugin: tool and hook registration"] -.-> H
 ```
 
-If the first step contains commands, return `not_executed: refresh_required` for them. Never replay them automatically. Cancellation remains available. Mark refresh as soon as compaction starts; clear it only for the matching completed recovery, so another compaction cannot race an earlier delivery.
+The application owns deployment and the permitted domain. The core has two integration boundaries, `Harness` and `Environment`. Combine several sources inside an environment instead of creating a framework of independently scheduled microservices.
 
-This requires a backend lifecycle signal and verified instruction restoration, not a second summarizer. A backend without those capabilities must report the limitation rather than claim reliable unattended compaction recovery. An exact note is optional; a missing note is empty context, not permission to invent a plan.
+## 2. Single ownership and modules
 
-Example agent-authored note:
-
-```text
-Intent: finish the currently chosen delivery.
-Evidence: possible drone in image 42 at sim 100; current location unknown.
-Commitment: peer message m18 requested a reply after delivery; pending.
-Code: inspect.js; execution state comes from the next bundle.
-```
-
-Update the note when an important intention or commitment changes. Do not copy each sensor batch or require a write every step. Save essential information when acquired, since automatic compaction can precede a planned checkpoint.
-
-## 7. Goal changes and native integration
-
-Only an authorized explicit goal update changes the goal record. Ordinary chat remains an event.
-
-By default, activate the new goal when its exact instruction is actually included for that robot. Serialize that activation with command admission: cancel affected old-goal work, reject old-version mutations, and return the exact new goal. Keep queued, delivered and acted-upon states separate. Emergency Stop is independent of goal delivery.
-
-A different robot can define a different activation policy in its profile, but must expose it explicitly. The application supplies completion evidence/criteria. A model's final sentence alone does not end an ongoing mission.
-
-| Native feature | Integration |
+| Module | Owns |
 | --- | --- |
-| Sessions and compaction | Keep one native conversation; let the backend compact it. Persist the session identity within the deployment's lifetime. |
-| Files and code execution | Use the native/private workspace. Register robot-controlling code as adapter-owned jobs so execution remains visible and cancellable. |
-| Plans, todos and native goals | Use for agent-owned planning or a derived view of the received goal. They do not independently overwrite the application's authoritative goal. |
-| Hooks and lifecycle events | Normalize startup/resume/compaction/completion into core lifecycle events. Test the installed version and actual root/child actor type. |
-| Multiple tool calls | Keep native scheduling for independent file work. Robot batch semantics remain explicit and backend-independent. |
+| `core/` | Logical loop identity, received goal, lifecycle, delivery cursor, refresh generation and wake coordination. |
+| `harnesses/codex/` | Codex process/session binding, native tool bridge, instruction installation, lifecycle translation and supported native features. |
+| `harnesses/claude-code/` | Equivalent Claude Code integration through its native SDK and hooks. |
+| Environment adapter, supplied by the application | Data acquisition, current sample slots, unread event queue, domain schema, permissions on effects, commands and domain jobs. |
+| `bridges/mcp/`, when needed | MCP encoding and transport. It owns no goal, job or session semantics. |
 
-Codex exposes compaction lifecycle items; its documented `SessionStart(source=compact)` recovery hook applies to root sessions, including automatic mid-turn compaction. Test native children separately. [Codex hooks](https://learn.chatgpt.com/docs/hooks#sessionstart), [App Server](https://learn.chatgpt.com/docs/app-server).
+Start with one library; make the two harness dependencies optional. Planned exports are `nervelet`, `nervelet/codex`, `nervelet/claude-code` and, if needed, `nervelet/mcp`. These are proposed exports, not published packages.
 
-Claude's Agent SDK supports session resume and reports a compaction boundary. Hook availability differs between TypeScript and Python; do not assume identical adapters. [Sessions](https://code.claude.com/docs/en/agent-sdk/sessions), [loop lifecycle](https://code.claude.com/docs/en/agent-sdk/agent-loop), [hooks](https://code.claude.com/docs/en/agent-sdk/hooks).
+An environment can compose polling APIs, pushed events and capture-on-request sensors. Reuse its existing queues and execution records. The core receives bounded views; it does not maintain another world database.
 
-Useful precedents: ROS 2 actions separate admission, feedback, cancellation and results; Code as Policies demonstrates authored programs calling perception/control APIs. Borrow those interface ideas; neither dependency is required. [ROS 2 actions](https://design.ros2.org/articles/actions.html), [Code as Policies](https://arxiv.org/abs/2209.07753).
+Native scripts/processes belong to the harness; domain jobs belong to the environment. Report execution references as `{owner, id}` and obtain status from that owner. Both can appear in one delivery bundle. Any script that affects the environment must use the same domain command admission path.
 
-### Minimal operating instruction
+## 3. Integration surface
 
-> You control this robot through its tools. Follow the exact received goal. Each robot step returns dated observations, current self-state, jobs and unread events. The world and valid jobs continue while you think, use files or wait. Admission is not completion; velocity describes physical motion. Batch independent commands; use jobs for dependencies. Treat sightings and notes as dated evidence. Preserve important intentions and commitments in your private note. On refresh, reconcile it with current state. Wait with a bounded observation deadline when no immediate work remains.
+Illustrative interfaces; supporting record schemas are defined by their owning module.
 
-Append the canonical vehicle profile and tool schemas once through native instructions. Do not require a narrated checklist or explanations of private reasoning.
+```ts
+interface Environment<State, Command> {
+  profile: Profile<State, Command>;
+  changes(signal: AbortSignal): AsyncIterable<ChangeNotice>;
+  snapshot(after: Cursor, signal: AbortSignal): Promise<Snapshot<State>>;
+  acknowledge(cursor: Cursor): Promise<void>;
+  submit(command: Command, context: CommandContext): Promise<Receipt>;
+  cancel(ref: ExecutionRef): Promise<CancelResult>;
+}
+```
 
-## 8. Delivery criteria
+`changes` announces available data/events or relevant transitions. It is a wake signal; the payload to deliver comes from `snapshot`. The environment owns latest samples and ordered unread events. `snapshot` can attempt a new capture where the source profile requires one. A read-only environment advertises no commands.
 
-Implement the portable contract independently of any application. Application-specific tool mappings and restrictions belong in robot adapters; see [DroneRTS](docs/dronerts.md) for the first integration target.
+The harness boundary opens or attaches a session, binds tools, submits input when idle, exposes lifecycle/execution events, restores instructions, interrupts and closes. Backend details remain in [Codex](docs/harnesses/codex.md) and [Claude Code](docs/harnesses/claude-code.md).
 
-**Token policy:** short meaningful keys; one copy of each value per bundle; lossless same-bundle deduplication; bounded event slices; no repeated file contents. Keep current full self-state and required sensor fidelity. Measure tokens, image cost, decision delay and useful progress separately; byte savings alone prove neither token savings nor faster decisions.
+Illustrative assembly:
 
-Before calling the library ready, verify:
+```ts
+const loop = createLoop({
+  harness: codex({ /* native model, permissions, workspace */ }),
+  environment: apiMonitor({ /* polling and event sources */ }),
+  goal: { text: "Investigate failed builds until the service is stopped." },
+  limits: { /* observation deadline, context, storage, cost */ }
+});
+await loop.run({ signal });
+```
 
-- One session can cross at least three manual/automatic compactions while work and the world change; exact instructions/goal/code survive and fresh state wins over old notes.
-- A job completes during thinking, waiting or compaction; its result arrives once logically, without repeating the physical action.
-- Stale evidence, missing images, clock reset and delayed/duplicate events are explicit.
-- Batches return all outcomes; dependencies, competing writers and uncertain retries cannot create hidden duplicate effects.
-- Goal changes race safely with admission; Stop interrupts waits/capture and cancels execution promptly.
-- Long runs stay within queue/workspace/receipt budgets. Test each native backend and root/child mode independently.
+The same core can use a DroneRTS environment or Claude Code harness. No raw model-provider abstraction is needed when all agents run through native harnesses.
 
-Start with deterministic protocol tests, then bounded real-agent trials for actual understanding and task progress. This document makes no new autonomy or hardware-readiness claim.
+## 4. Continuous acquisition, bounded decisions
+
+Keep three activities independent:
+
+1. The environment acquires data on its own schedule.
+2. The harness runs the model and native tools.
+3. Accepted jobs execute and report progress.
+
+```mermaid
+sequenceDiagram
+    participant E as Environment
+    participant N as Nervelet
+    participant H as Native harness
+    E-->>N: Data/event available
+    N->>E: Snapshot
+    E-->>N: Dated data and current work
+    N->>H: Deliver input if idle
+    Note over E,H: Acquisition and jobs continue during inference
+    H->>N: nervelet.step(commands)
+    N->>E: Admit compatible commands
+    E-->>N: Receipts and new snapshot
+    N-->>H: Return tool result in the same native turn
+```
+
+Keep one active inference invocation per logical loop. A tool result resumes the current native inference loop; it does not launch another agent turn.
+
+While the harness is busy, coalesce sample-change notifications into one pending wake. Preserve unread events. On idle, deliver a snapshot if relevant events or a configured observation deadline require it. Rate-limit ordinary wakes; acquisition rate and model invocation rate are separate settings. Never interrupt on every camera frame.
+
+A wait wakes for relevant events, cancellation or its bounded timeout. Sample-only changes need not wake it immediately. The timeout prevents a visual or API-only source from becoming invisible indefinitely.
+
+Private file reads and native script tools do not automatically acquire external observations. Their results may make earlier evidence older. The next Nervelet step refreshes the environment view.
+
+Native completion of a response is an idle state. The application decides mission completion from its criteria. Errors, budget exhaustion, pause, Stop and completion remain distinct; limits are not bypassed by restarting a session.
+
+## 5. Agent-facing tools
+
+```ts
+nervelet.step({})                         // observe
+nervelet.step({ waitMs: 2000 })           // event or bounded timeout
+nervelet.step({
+  goalVersion: 7,
+  commands: [
+    { id: "c18", kind: "inspect", args: { /* domain fields */ } },
+    { id: "c19", kind: "report", args: { /* independent work */ } }
+  ]
+})
+nervelet.cancel({ owner: "environment", id: "j12" })
+```
+
+Observe, wait and batch are separate forms; do not mix waiting with commands. Generate command schemas and operating instructions from the environment's canonical profile. Batch size and source requirements are configured limits, not game rules.
+
+**Batch semantics:**
+
+- Validate compatibility, authority, received goal version and capabilities. Return a receipt for every entry.
+- Admit in listed order. Admission does not wait for physical or remote completion. Valid independent jobs can overlap.
+- The domain owns exclusive resources and explicit replacement rules. A robot may allow only one movement writer.
+- Partial failure does not roll back completed effects. Newly acquired capabilities become usable after refreshed state.
+- Dependencies requiring completion belong in an ordered domain job or authored routine. Dependencies requiring new evidence need another step.
+- The effect owner deduplicates bounded command IDs. Unknown/expired receipts stay unknown; never blindly repeat an uncertain mutation.
+
+A native `await` follows the called API's semantics: awaiting admission is not awaiting completion. Expose both submission latency and execution progress; label optional ETAs as estimates.
+
+Cancellation dispatches directly to the owner before waiting for capture or ordinary tool queues. Stop also has a host-side path independent of model inference.
+
+## 6. What a bundle contains
+
+| Field | Contract |
+| --- | --- |
+| Header | Loop identity, schema/profile versions, sequence, clock epoch, delivery time and lifecycle. |
+| Goal | Exact received text, version and status. Goal size is bounded at admission; no silent shortening. |
+| Results | Per-command outcomes and execution references. |
+| State | Timestamped domain-owned current status. An API monitor might expose queue depth; a robot might expose pose, velocity, cargo and equipment. |
+| Observations | Named samples with acquisition time, validity, source identity and typed text/image/data content. |
+| Executions | Bounded current status from harness and environment owners: running work, progress, reason and source references. |
+| Events | Exact unread slice, cursor and `hasMore`. |
+
+The core requires neither a camera nor a `velocity` or `cargo` field. Environments define the state and source schemas. DroneRTS supplies all of its own-state fields every step.
+
+“Latest available” does not mean “acquired now.” A source profile specifies polling, streaming or fresh capture at each step. Failed acquisition is explicit; never label a cached image as newly captured. Images use native multimodal content blocks.
+
+Keep latest values for replaceable samples; retain discrete events in bounded ordered queues. Mark gaps in lossy streams; apply backpressure to reliable events. Preserve event IDs across retry. Acknowledge only backend-confirmed inclusion; uncertain delivery can be repeated with the same IDs. Inclusion is not comprehension or agreement.
+
+Do not send every intermediate frame, full logs or the workspace directory. Deliver a compact complete current state rather than deltas requiring forgotten history. Preserve required precision and validity. Lossless deduplication stays within a bundle.
+
+## 7. Staleness and goals
+
+Every observation is evidence from a named time and source. Receipt time, repeated text and compaction do not refresh its evidence time. Track monotonic acquisition/delivery clocks with epochs; add simulation time when relevant. Clock synchronization across hosts must be explicit.
+
+At command admission, evidence is older by the inference and transport delay. The domain can require an observation reference and a maximum age for particular commands. Age validation bounds delay; it does not prove the world stayed unchanged.
+
+| Example | Observation | Later decision |
+| --- | --- | --- |
+| API monitor | Build B was queued at t=10. | At t=16, read current build state before an action that depends on it still being queued. |
+| Robot | Image 42 shows an object at t=100. | Its current location is unknown if it has moved out of the next view. |
+| Local execution | Job J12 was accepted. | Current progress and domain status establish what it is doing; acceptance alone does not. |
+
+If inference exceeds the task's reaction window, use an explicitly available local routine/controller or accept the capability limit. Nervelet supplies no implicit perception, tracker or planner.
+
+Only explicit authorized updates replace goals. By default, activate a goal upon confirmed delivery to that loop, serialize the change with command admission, cancel affected old-goal work and reject old-version commands. The application may configure earlier activation with commands blocked until delivery. Ordinary messages never implicitly replace goals. Emergency Stop does not wait for goal delivery.
+
+## 8. Compaction and recovery
+
+Native history provides continuity. Exact sources provide correctness.
+
+| Must remain exact | Owner and delivery |
+| --- | --- |
+| Loop contract, identity, schemas and domain calibration | Native instruction configuration generated from the profile; restore after context loss. |
+| Received goal | Core record; repeat exact text/version each step. |
+| Active command parameters, source versions and IDs | Execution owner; compact status normally, exact active specification on recovery or lookup. |
+| Authored code and essential commitments | Private files; restore an optional short `working.md`, read other files on demand. |
+| Current external state | Acquire again; old snapshots are historical. |
+
+On startup, resume, compaction or profile change:
+
+1. Mark a new refresh generation.
+2. The harness adapter ensures exact operating instructions and schemas are available.
+3. The next step returns fresh state, exact goal, active specifications and the saved note. Withhold submitted mutations with `not_executed: refresh_required`.
+4. Clear only the matching delivered generation. Let the model decide again; never replay withheld commands.
+
+Cancellation remains available. Existing jobs continue only while their owner's authority and execution conditions remain valid. Native session failure, environment/controller failure and normal model thinking are different conditions.
+
+Do not rebuild summaries, transcripts or a memory database. Update a small private note when an important intention or commitment changes. Preserve source/time/uncertainty for hypotheses; a missing note stays missing. Keep untrusted observations and peer text at their original authority when restoring context.
+
+An adapter must expose reliable recovery boundaries. If it cannot, report that unattended compaction recovery is unsupported. Process restart adds reconciliation: reopen native state where supported, query execution owners, reacquire observations and never replay historical side effects.
+
+## 9. Native features without competing owners
+
+Reuse native files, search, execution, planning, context and session APIs. Keep optional native controls in typed backend-specific configuration; report requested unsupported features before starting.
+
+Native tasks/plans describe agent intent. Native goals may display the application's received goal but do not independently overwrite it. Native background executions retain their original owner and IDs. Native subagents are optional harness capabilities, with independently verified isolation and recovery.
+
+Default deployment gives each loop a dedicated native session. An existing application may attach its own root/child sessions through the same adapter contract, provided it reports lifecycle and grants only scoped tools. Exactly one supervisor binds each logical loop. DroneRTS retains its existing actor topology.
+
+## 10. Implementation order and proof
+
+Start with native async iterators, `AbortSignal`, bounded queues and explicit lifecycle state. Add libraries only where measured complexity warrants them; see [dependency choices](docs/architecture-options.md#related-projects-and-dependencies).
+
+1. Implement core and a deterministic API-only environment. No robot fields, images or native inference should be necessary.
+2. Implement and qualify the Codex adapter, then the Claude Code adapter, against the same contract suite.
+3. Integrate DroneRTS as the canonical application without moving game rules into core.
+4. Add plugin packaging or Orchflows examples when a real launch workflow needs them.
+
+Verify independent acquisition during inference; bounded/coalesced wakes; full batch outcomes; stale and missing data; uncertain delivery; duplicate effects; goal/admission races; prompt Stop; and at least three automatic/manual compactions with work in progress.
+
+Measure model tokens, image contribution, decision delay, acquisition age and useful progress separately. Run actual harness tests before claiming native support, and application trials before claiming autonomous performance. Documentation and deterministic fixtures do not establish hardware readiness.
