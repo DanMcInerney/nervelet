@@ -1,0 +1,28 @@
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Private runtime state and evidence
+.runtime/
+artifacts/
+.codex/
+.claude/
+*.log
+
+# Local environments and editor files
+.venv/
+__pycache__/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
