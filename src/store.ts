@@ -1,13 +1,17 @@
 import { bytes, fail, now } from './util.ts';
 import type { Event, Json, Sample, Snapshot, Job } from './types.ts';
+import { ChangeSignal } from './changes.ts';
 
 /** Optional environment-owned storage. Latest values coalesce; events never silently evict. */
 export class ObservationStore {
+  readonly changes = new ChangeSignal();
   private samples: Record<string, Sample> = Object.create(null);
   private state?: Sample;
   private events: Event[] = [];
   private sequence = 0;
   private eventBytes = 0;
+  private highWaterEvents=0;
+  private highWaterBytes=0;
   private listeners = new Set<() => void>();
   fault?: string;
   setSample(name: string, sample: Sample): void {
@@ -15,10 +19,12 @@ export class ObservationStore {
     const next = { ...this.samples, [name]: structuredClone(sample) };
     if (Object.keys(next).length > 64 || bytes(next) > 8192) fail('capacity', 'Latest samples exceed capacity.');
     this.samples = next;
+    this.changes.notify();
   }
   setState(state: Sample): void {
     if (bytes(state) > 4096) fail('capacity', 'Own state exceeds capacity.');
     this.state = structuredClone(state);
+    this.changes.notify();
   }
   push(kind: string, data: Json): boolean {
     const event = { seq: this.sequence + 1, kind, atMs: now(), data };
@@ -28,9 +34,12 @@ export class ObservationStore {
       return false;
     }
     this.sequence++;
-    this.events.push(structuredClone(event)); this.eventBytes += size; this.wake(); return true;
+    this.events.push(structuredClone(event)); this.eventBytes += size;
+    this.highWaterEvents=Math.max(this.highWaterEvents,this.events.length);this.highWaterBytes=Math.max(this.highWaterBytes,this.eventBytes);
+    this.wake(); return true;
   }
   setFault(reason: string): void { this.fault = reason.slice(0,256); this.wake(); }
+  stats(){return {events:this.events.length,eventBytes:this.eventBytes,highWaterEvents:this.highWaterEvents,highWaterBytes:this.highWaterBytes,samples:Object.keys(this.samples).length};}
   acknowledge(through: number): void {
     this.events = this.events.filter(e => e.seq > through);
     this.eventBytes = this.events.reduce((sum,e) => sum + bytes(e),0);
@@ -47,7 +56,7 @@ export class ObservationStore {
       ...(this.fault ? { fault: this.fault } : {})
     };
   }
-  wake(): void { for (const listener of [...this.listeners]) listener(); }
+  wake(): void { this.changes.notify(); for (const listener of [...this.listeners]) listener(); }
   wait(signal: AbortSignal): Promise<void> {
     return new Promise((resolve,reject) => {
       const finish = () => { cleanup(); resolve(); };

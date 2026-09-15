@@ -1,6 +1,6 @@
 import { ObservationStore } from '../store.ts';
 import { fail, now } from '../util.ts';
-import type { Command, CommandContext, Environment, Job, Profile, Receipt } from '../types.ts';
+import type { Command, CommandContext, ControlOutcome, Environment, Job, Profile, Receipt } from '../types.ts';
 
 export const demoProfile: Profile = {
   id:'demo',version:'1',
@@ -15,6 +15,7 @@ export const demoProfile: Profile = {
 export class DemoEnvironment implements Environment {
   readonly profile = structuredClone(demoProfile);
   readonly store = new ObservationStore();
+  readonly changes = this.store.changes;
   private timer?: NodeJS.Timeout;
   private jobs = new Map<string,Job>();
   private led = false;
@@ -46,6 +47,7 @@ export class DemoEnvironment implements Environment {
   wait(signal:AbortSignal) {return this.store.wait(signal);}
   async execute(command:Command,context:CommandContext):Promise<Receipt> {
     context.signal.throwIfAborted();
+    context.assertCurrent?.();
     if(this.store.fault)return {id:command.id,status:'rejected',reason:this.store.fault};
     if(command.kind==='move') {
       if(this.active())return {id:command.id,status:'rejected',reason:'motion_busy'};
@@ -62,11 +64,12 @@ export class DemoEnvironment implements Environment {
     else if(command.kind!=='sample')return {id:command.id,status:'rejected',reason:'unknown_command'};
     this.acquire();return {id:command.id,status:'completed'};
   }
-  async cancel(id:string):Promise<void> {
+  async cancel(id:string):Promise<ControlOutcome> {
     const job=this.jobs.get(id);if(!job)fail('unknown_job','Unknown or expired job.');
     if(job.status==='running')this.finish(job,'cancelled');this.acquire();
+    return {status:'confirmed'};
   }
-  async stop():Promise<void> {const job=this.active();if(job)this.finish(job,'cancelled');this.acquire();}
+  async stop():Promise<ControlOutcome> {const job=this.active();if(job)this.finish(job,'cancelled');this.acquire();return {status:'confirmed'};}
   async close():Promise<void> {if(this.timer)clearInterval(this.timer);this.timer=undefined;}
 }
 export const createDemoEnvironment = () => new DemoEnvironment();

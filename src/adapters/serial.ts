@@ -2,7 +2,7 @@ import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { ObservationStore } from '../store.ts';
 import { fail, now, object } from '../util.ts';
-import type { Command, CommandContext, Environment, Job, Json, Profile, Receipt, Sample } from '../types.ts';
+import type { Command, CommandContext, ControlOutcome, Environment, Job, Json, Profile, Receipt, Sample } from '../types.ts';
 
 export interface SerialOptions {
   path?: string;
@@ -18,6 +18,7 @@ type Pending={resolve:(value:Record<string,unknown>)=>void;reject:(error:Error)=
 export class SerialEnvironment implements Environment {
   readonly profile:Profile;
   readonly store=new ObservationStore();
+  readonly changes=this.store.changes;
   private options:SerialOptions;
   private stream?:Duplex;
   private pending=new Map<string,Pending>();
@@ -129,6 +130,7 @@ export class SerialEnvironment implements Environment {
     });
   }
   async execute(command:Command,context:CommandContext):Promise<Receipt> {
+    context.signal.throwIfAborted();context.assertCurrent?.();
     if(this.store.fault)return {id:command.id,status:'rejected',reason:this.store.fault};
     if(!this.ready||now()-this.lastReceived>(this.options.staleMs??2000))return {id:command.id,status:'rejected',reason:'stale_serial_telemetry'};
     const resource=this.profile.commands[command.kind]?.resource;
@@ -148,18 +150,20 @@ export class SerialEnvironment implements Environment {
     }
     return result;
   }
-  async cancel(id:string,signal:AbortSignal):Promise<void> {
+  async cancel(id:string,signal:AbortSignal):Promise<ControlOutcome> {
     const job=this.jobs.get(id);if(!job)fail('unknown_job','Unknown or expired device job.');
-    if(job.status!=='running'&&job.status!=='blocked')return;
+    if(job.status!=='running'&&job.status!=='blocked')return {status:'confirmed'};
     const result=await this.rpc({type:'cancel',id:`ctl:${this.controlEpoch}:${++this.controlSequence}`,jobId:id},signal);
     if(result.type!=='control'||result.ok!==true)fail('cancel_failed','Device did not confirm cancellation.');
     if(job.status==='running'||job.status==='blocked'){job.status='cancelled';job.updatedMs=now();}this.store.wake();
+    return {status:'confirmed'};
   }
-  async stop(signal:AbortSignal):Promise<void> {
+  async stop(signal:AbortSignal):Promise<ControlOutcome> {
     const result=await this.rpc({type:'stop',id:`ctl:${this.controlEpoch}:${++this.controlSequence}`},signal);
     if(result.type!=='control'||result.ok!==true)fail('stop_failed','Device did not confirm Stop.');
     for(const job of this.jobs.values())if(job.status==='running'||job.status==='blocked'){job.status='cancelled';job.updatedMs=now();}
     this.store.wake();
+    return {status:'confirmed'};
   }
   async snapshot(after:number){return this.store.snapshot(after,[...this.jobs.values()]);}
   acknowledge(through:number):void{this.store.acknowledge(through);}

@@ -4,10 +4,11 @@ import { mkdir, realpath, lstat, unlink, chmod } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { Bridge } from './core.ts';
+import { createHandlers } from './handlers.ts';
 import { atomicWrite, fail, message, NerveletError, object, readBounded, optionalText } from './util.ts';
 import type { StepRequest } from './types.ts';
 
-export interface RpcRequest { method: 'step'|'cancel'|'stop'|'status'|'goal'|'refresh'|'instructions'|'shutdown'; params?: unknown }
+export interface RpcRequest { method: 'step'|'cancel'|'stop'|'status'|'goal'|'refresh'|'instructions'|'shutdown'|'tools'|'tool'; params?: unknown }
 interface Address { endpoint: string; token: string; epoch: string; pid: number }
 const addressFile = (cwd:string) => join(cwd,'.nervelet','bridge.json');
 async function endpoint(cwd:string):Promise<string> {
@@ -39,9 +40,15 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
     }
   }
   const token=randomBytes(32).toString('hex');
+  const handlers=createHandlers(bridge,{legacy:true});
+  const nativeHandlers=createHandlers(bridge);
   const sockets=new Set<Socket>();
   let shuttingDown=false;
   let recoveryMarker:string|undefined;
+  const applyRecoveryMarker=async()=>{
+    const marker=await optionalText(join(cwd,'.nervelet','refresh'),128);
+    if(marker!==recoveryMarker){recoveryMarker=marker;bridge.refresh('native_session_recovery');}
+  };
   let resolveClosed:()=>void=()=>{};
   const closed=new Promise<void>(r=>{resolveClosed=r;});
   const server=createServer(socket=>{
@@ -63,17 +70,18 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
           const params=rpc.params;
           let result:unknown;
           switch(rpc.method) {
+            case 'tools':result={tools:nativeHandlers.tools,instructions:nativeHandlers.instructions,loopRef:nativeHandlers.loopRef};break;
+            case 'tool':if(!object(params)||typeof params.name!=='string')fail('invalid_input','tool requires name and args.');if(params.name==='step')await applyRecoveryMarker();result=await nativeHandlers.call(params.name,params.args??{},controller.signal);break;
             case 'step': {
-              const marker=await optionalText(join(cwd,'.nervelet','refresh'),128);
-              if(marker!==recoveryMarker){recoveryMarker=marker;bridge.refresh('native_session_recovery');}
-              result=await bridge.step((params??{}) as StepRequest,controller.signal);break;
+              await applyRecoveryMarker();
+              result=await handlers.call('step',params??{},controller.signal);break;
             }
-            case 'cancel': if(!object(params)||typeof params.id!=='string')fail('invalid_input','cancel requires id.');await bridge.cancel(params.id);result={cancelRequested:params.id};break;
+            case 'cancel': if(!object(params)||typeof params.id!=='string')fail('invalid_input','cancel requires id.');result={cancelRequested:params.id,outcome:await handlers.call('cancel',{jobId:params.id})};break;
             case 'goal': if(!object(params)||typeof params.text!=='string')fail('invalid_input','goal requires text.');result=await bridge.updateGoal(params.text);break;
             case 'refresh': bridge.refresh('context_recovery');result={profile:bridge.profileText,...bridge.status()};break;
             case 'instructions': result={profile:bridge.profileText};break;
             case 'status': result=bridge.status();break;
-            case 'stop': await bridge.stop();result=bridge.status();break;
+            case 'stop': await handlers.call('stop',{});result=bridge.status();break;
             case 'shutdown': await bridge.stop();result={loop:'stopped'};break;
             default: fail('invalid_method','Unknown bridge method.');
           }
@@ -101,7 +109,7 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
     if(process.platform!=='win32')await chmod(path,0o600);
     await bridge.start();
     await atomicWrite(addressFile(cwd),JSON.stringify({endpoint:path,token,epoch:bridge.epoch,pid:process.pid}));
-    await atomicWrite(join(cwd,'.nervelet','profile.md'),bridge.profileText+'\n');
+    await atomicWrite(join(cwd,'.nervelet','profile.md'),handlers.instructions+'\n');
   } catch(error) {await close().catch(()=>{});throw error;}
   return {endpoint:path,close,closed};
 }

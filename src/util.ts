@@ -42,6 +42,16 @@ export async function bounded<T>(fn: (signal: AbortSignal) => Promise<T>, ms: nu
     parent?.removeEventListener('abort', abort);
   }
 }
+/** Abort a logical wait without inventing or periodically extending a deadline. */
+export function withAbort<T>(promise:Promise<T>,signal:AbortSignal):Promise<T> {
+  return new Promise((resolve,reject)=>{
+    const cleanup=()=>signal.removeEventListener('abort',abort);
+    const abort=()=>{cleanup();reject(signal.reason);};
+    signal.addEventListener('abort',abort,{once:true});
+    promise.then(value=>{cleanup();resolve(value);},error=>{cleanup();reject(error);});
+    if(signal.aborted)abort();
+  });
+}
 export async function atomicWrite(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomUUID()}.tmp`;

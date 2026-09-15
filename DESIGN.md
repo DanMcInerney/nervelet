@@ -1,6 +1,6 @@
 # Design: one agent, one bridge
 
-**Implemented v0.1 · 2026-09-15.** [Validation and current limitations](docs/validation.md).
+**Historical v0.1 design · 2026-09-15.** The compatible CLI behavior below is retained. [v0.2 implementation](docs/v2.md) supersedes the initial exclusions, separate command/wait forms, image deferral and absence of drivers/supervision. [Validation and current limitations](docs/validation.md).
 
 Nervelet connects one native coding-agent session to a changing environment. A local CLI runs through the harness's shell tool. A small persistent bridge maintains device/API connections while the model thinks.
 

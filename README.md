@@ -2,9 +2,11 @@
 
 **A small nervous system for coding agents.**
 
-Connect one Claude Code or Codex agent to continuously changing sensors, APIs or a simulation. The harness runs the agent; Nervelet keeps the connection open and delivers observations and commands.
+Connect one native or API/local-model agent to continuously changing sensors, APIs or a simulation. Embed the TypeScript Bridge directly, or use the existing CLI. Environments own execution; native harnesses own reasoning; one optional supervisor owns continuation.
 
-**v0.1:** TypeScript library, CLI, simulated device, optional serial adapter and native harness installers. [Validation](docs/validation.md) records what has actually been tested.
+**v0.2:** Shared handlers, conditional waits and managed parking, compact recovery, acknowledged events, typed images, MCP, and modular Codex, Claude Code and API drivers. The CLI, serial adapter and installer entry points remain compatible. [Validation](docs/validation.md) records tests and remaining native/hardware qualification.
+
+**Implemented handoff:** [NEXT-DESIGN.md](NEXT-DESIGN.md) is the accepted design. [Embedding and drivers](docs/v2.md) describes the implementation and limitations. Python and the background engineer remain unimplemented optional follow-ons. DroneRTS gameplay and live sessions are outside this refactor.
 
 ```mermaid
 flowchart LR
@@ -21,7 +23,7 @@ flowchart LR
 - **Small harness modules** install instructions and recovery hooks. Native sessions, execution and compaction stay native.
 - **Plain files** preserve essential instructions and notes across compaction.
 
-Use the native shell tool; no MCP is required. Initial scope is one agent and one bridge. A plugin installer, multiple agents and unattended process supervision can wait.
+Use the native shell tool for the compatible scalar CLI path. Managed native drivers use MCP; API/local models call the same handlers directly. Each Bridge has one operator. Independent instances can share a TypeScript host.
 
 DroneRTS is the canonical application; its vehicle fields and game rules stay outside the core.
 
@@ -77,24 +79,28 @@ One batch returns individual admissions and one observation. `accepted` means a 
 
 Every step repeats compact current state and the exact goal. Startup/resume/compaction hooks require a fresh observation. That recovery bundle adds the exact operating profile, active job arguments and optional `working.md` note. Acknowledging its ID enables commands. Old sensor positions never become durable facts.
 
-Nervelet uses the harness's existing session, workspace and compaction. It does not schedule model calls or promise unattended restart. Bridge restarts create a new epoch; in-memory events and receipts are not persisted.
+Native drivers keep the harness's session, workspace and compaction. Managed parking waits without periodic model calls; attached CLI sessions have no guaranteed idle wake. Bridge restarts create a new epoch; in-memory events and receipts are not persisted.
 
 ## Build an integration
 
 - [Design](DESIGN.md): the loop, ownership, batches, freshness and recovery.
 - [Adapter API](docs/api.md): configuration, embedding and ownership.
+- [v0.2 embedding and drivers](docs/v2.md): shared tools, parking, images, native/API drivers and compatibility.
 - [Arduino example](docs/arduino.md): firmware, serial setup and protocol.
 - [Integration decision](docs/architecture-options.md): why a CLI and bridge.
 - [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md)
 - [How DroneRTS works today](docs/dronerts.md)
 - [Development instructions](AGENTS.md)
 
-DroneRTS integration, image transport and additional agents are deferred. This repository has not been published to npm; install from a built local checkout for a separate project.
+The six-pilot deterministic fixture demonstrates the DroneRTS integration shape. Actual gameplay migration and native image understanding remain unqualified. This repository has not been published to npm; install from a built local checkout for a separate project.
 
 ## Check
 
 ```sh
 npm test
+npm run check:package
+npm run check:docs
+npm run measure
 ```
 
-Builds and runs deterministic bridge, CLI, hook and serial protocol tests. Native inference tests are explicit opt-in commands described in [validation](docs/validation.md).
+Builds and runs deterministic bridge, CLI, hook, serial, MCP, driver and embedding tests. Package checks install an isolated core without optional peers; measurement uses a fake driver. Native inference tests are explicit opt-in commands described in [validation](docs/validation.md).
