@@ -1,6 +1,6 @@
 # DroneRTS integration
 
-The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a continuous drone simulation. DroneRTS is the canonical usage and integration test case; its rules remain application-specific. This document records the extraction context as of 2026-09-15. The standalone runtime and its DroneRTS integration are not implemented.
+The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a continuous drone simulation. DroneRTS is the canonical future application; its rules remain application-specific. This document records the extraction context as of 2026-09-15. The standalone runtime is implemented; its DroneRTS integration is deferred.
 
 ## Boundary
 
@@ -36,7 +36,7 @@ Normal living-pilot direct tool results and aggregate `exchange` results attempt
 
 `exchange` admits up to eight compatible operations with individual outcomes. Admission is separate from physical completion. Local control continues while the agent thinks or waits.
 
-The runtime observes native compaction events. The proposed restoration contract and refresh gate remain implementation work.
+The runtime observes native compaction events. Connecting those events to Nervelet's recovery gate remains integration work.
 
 Source references: [tools and instructions](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime-tools.ts), [bundle assembly](https://github.com/DanMcInerney/DroneRTS/blob/main/server/game.ts), [native runtime](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime.ts), [onboard contract](https://github.com/DanMcInerney/DroneRTS/blob/main/ONBOARD.md). These links require access to the source repository.
 

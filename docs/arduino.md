@@ -1,81 +1,87 @@
-# One Arduino, one Claude Code agent
+# One Arduino, one native agent
 
-**Proposed experience. These commands, adapters and example firmware are not implemented yet.**
+Claude Code/Codex and Nervelet run on the computer. The Arduino samples its sensors, reports status and accepts bounded commands. The model does not run on the microcontroller.
 
-Claude Code and Nervelet run on the connected computer. The Arduino runs firmware that samples sensors, reports device status and accepts bounded commands. The model does not run on the microcontroller.
+The [example](../examples/arduino/nervelet.config.ts) targets an **Uno R3**, a TMP36 temperature sensor on A0, 5 V analog reference and the onboard LED on pin 13. Its firmware compiles; physical hardware has not been tested. The LED is a harmless first output, not a motor controller.
 
 ## Setup
 
-1. Provide firmware and an adapter profile describing the serial protocol, units, sensor validity and allowed commands. For a first example, use a temperature sensor and an LED.
-2. Configure the port and baud rate in `nervelet.config.ts`; write the exact objective in `goal.txt`.
-3. Start the bridge and open the native agent.
+1. Build/link Nervelet following the [README](../README.md).
+2. Connect the TMP36 using its manufacturer's pinout: supply, ground, output to A0. The profile's conversion assumes a 5 V ADC reference; change firmware and profile together for another board/reference.
+3. Install ArduinoJson 7 and compile/upload [bench.ino](../examples/arduino/bench/bench.ino) using Arduino IDE or CLI. Uploading is a separate, explicit operation. Stop any other serial monitor before starting Nervelet.
+4. From `examples/arduino`, select the serial port, install harness instructions and start the bridge.
 
-Proposed terminal commands:
+PowerShell example:
 
-```sh
+```powershell
+$env:NERVELET_PORT = 'COM4'
 nervelet init --harness claude-code
-nervelet serve --config nervelet.config.ts --goal goal.txt
+nervelet serve
 ```
 
-In another terminal, run `claude` in the same project and ask it to follow the configured Nervelet goal. `init` would install project instructions/hooks; `serve` would keep the device connection open. Firmware flashing is a separate setup action, not an implicit side effect of either command.
+On macOS/Linux, use your actual device path, for example `NERVELET_PORT=/dev/ttyACM0 nervelet serve`. In another terminal, run `claude` in the same directory and ask it to follow the Nervelet goal. Native tool permissions still apply.
 
-The serial adapter can use [Node SerialPort](https://serialport.io/docs/). A small newline-delimited JSON protocol is enough for this example; other adapters can use existing binary protocols or APIs. Core does not require a particular wire format.
+Optional CLI compilation, from the repository root:
 
-## What happens
+```sh
+arduino-cli core install arduino:avr
+arduino-cli lib install ArduinoJson
+arduino-cli compile --fqbn arduino:avr:uno examples/arduino/bench
+```
+
+## What keeps running
 
 ```mermaid
 sequenceDiagram
     participant D as Arduino
-    participant B as Nervelet bridge
-    participant A as Claude Code
-    D-->>B: Periodic samples and own status
-    A->>B: Bash: nervelet step
-    B-->>A: Goal, latest dated data, jobs and events
-    Note over D,A: Board and bridge continue while Claude reasons or writes code
-    A->>B: Bash: step with command batch
+    participant B as Bridge
+    participant A as Native agent
+    D-->>B: Sample and own status every 100 ms
+    B->>D: Startup Stop; await confirmation
+    A->>B: nervelet step
+    B-->>A: Exact contract, goal and dated evidence
+    Note over D,A: Sampling and bridge heartbeat continue during inference
+    A->>B: step with seen and command batch
     B->>D: Validated commands
-    D-->>B: Receipt or job progress
-    B-->>A: Per-command results and updated observation
-    A->>B: Bash: step with bounded wait
-    D-->>B: Relevant change
-    B-->>A: Next observation
+    D-->>B: Receipts and new sample
+    B-->>A: Receipts and updated evidence
+    A->>B: step with bounded wait
+    B-->>A: Latest evidence on event or timeout
 ```
 
-The agent can write a helper script with native tools, test it, then run it through the same bridge client. A helper must not independently open the serial port or acknowledge model inbox data it has not delivered. Deterministic sampling or fast control should execute locally; the model chooses and inspects work at a slower pace.
+The agent sees `state.value.ledOutput` and `samples.temperatureC`. Each includes `acquired`, `receivedMs` and `valid`. LED output is the commanded output setting, not measured brightness. Board acquisition time and bridge receipt time use different clocks.
 
-## What the agent sees
+The bridge sends heartbeat every 250 ms, independent of inference. Firmware clears the LED after 1.5 s without heartbeat. Missing telemetry faults the adapter after its configured 2 s freshness bound (checked every 250 ms); malformed/invalid telemetry faults immediately. Faults gate commands and trigger a best-effort Stop. Device watchdog remains the final path if the bridge disconnects. New telemetry does not silently clear an existing fault.
 
-Illustrative compact JSON, formatted here for readability:
+`nervelet stop` clears the LED and ends the loop. `shutdown` also closes the port. Closing the model alone leaves the bridge running; it is not a device Stop. Restart the bridge only after reconciling a fault; it obtains a confirmed Stop on startup.
+
+## Serial protocol v1
+
+One JSON object per line, UTF-8, 115200 baud. These packets are wire-format examples, not full model bundles.
+
+Device → bridge:
 
 ```json
-{
-  "id": "b41",
-  "epoch": "host:4",
-  "deliveredMs": 31258,
-  "profile": "bench:1",
-  "loop": "active",
-  "rule": "Step refreshes observations; native file tools do not. Observation times are acquisition times. Accepted jobs may still run. Wait when idle; stop ends the loop.",
-  "goal": { "version": 3, "status": "active", "text": "Watch temperature until stopped." },
-  "source": {
-    "id": "serial",
-    "epoch": "board:9",
-    "sampleMs": 512,
-    "receivedMs": 31250,
-    "valid": true
-  },
-  "state": { "ledOutput": false },
-  "samples": { "temperatureC": 24.6 }
-}
+{"type":"sample","clock":"board","seq":1,"atMs":100,"valid":true,"state":{"ledOutput":false},"samples":{"temperatureC":23.1}}
+{"type":"receipt","id":"EPOCH:c1","status":"completed"}
+{"type":"receipt","id":"EPOCH:c2","status":"accepted","jobId":"j1"}
+{"type":"job","id":"j1","status":"completed"}
+{"type":"event","kind":"message","data":{"text":"button pressed"}}
+{"type":"control","id":"CONTROL_ID","ok":true}
 ```
 
-Here, the single source timestamp applies to both state and samples. Board acquisition time and host receipt time use different clocks; do not subtract them without synchronization. Empty jobs/events/results are omitted. A disconnected board instead reports stale/invalid data explicitly.
+Bridge → device:
 
-The next call can be `nervelet step --seen b41 --wait-ms 2000`. Waiting yields on a relevant event or timeout; it does not suspend acquisition. The response arrives as ordinary Bash output in the same Claude conversation.
+```json
+{"type":"command","id":"EPOCH:c1","kind":"set_led","args":{"on":true}}
+{"type":"command","id":"EPOCH:c2","kind":"sample","args":{}}
+{"type":"heartbeat"}
+{"type":"cancel","id":"CONTROL_ID","jobId":"j1"}
+{"type":"stop","id":"CONTROL_ID"}
+```
 
-For an adapter with motion, a result might additionally contain `velocity` and a job such as `{ "id": "j7", "status": "running" }`. That tells the agent the device is still moving even though command submission returned earlier.
+Echo request IDs exactly. Admission statuses are `accepted`, `completed`, `rejected`; rejected receipts may include `reason`. Only accepted commands create jobs. Report later job status as `running`, `blocked`, `completed`, `cancelled` or `failed`. Reuse neither job IDs nor source sequence numbers during a connection. A changed source clock or non-increasing sequence faults the bridge. The example firmware supports immediate LED/sample commands; Stop and cancel both clear its LED. It has no movement or job implementation.
 
-## Compaction and stopping
+Adapter input frames are capped at 8 KiB; the Uno example's command buffer is **384 bytes**, sufficient for its tiny command schema. Pending requests and retained job records are capped at 16 each. Unread event overflow faults explicitly. This simple wire protocol has no reliable device-event replay or automatic reconnect; add source-specific reliability in another adapter when needed.
 
-Keep the exact profile and goal outside conversation history. Restore instructions through the harness module, reacquire data and require a fresh acknowledged bundle before new commands. Keep only important intentions in a short native workspace note.
-
-`nervelet stop` ends the loop and invokes the adapter's cancellation policy. Closing or interrupting Claude is a separate event; the device adapter must define controller-loss behavior. Initial support assumes an open native session and respects its limits. Automatic process restart and additional agents are deferred.
+Implementation uses optional [Node SerialPort](https://serialport.io/docs/). See [validation](validation.md) for exact compiler/core/library versions and the difference between stream tests and hardware evidence.

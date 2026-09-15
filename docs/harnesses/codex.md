@@ -1,25 +1,38 @@
 # Codex integration
 
-**Proposed module:** `harnesses/codex/`. No implementation or version qualification yet.
+**Implemented:** `nervelet/codex`. **Partially qualified** on Codex CLI **0.144.0**: native startup hook, recovery observation and Stop worked. The full request-file/batch scenario was blocked by this host's Windows sandbox. [Evidence](../validation.md).
 
-## Initial path
+```sh
+nervelet init --harness codex
+nervelet serve
+# In another terminal, same project:
+codex --enable hooks
+```
 
-Use Codex's native shell/exec tool to call the same `nervelet` CLI. Preserve the native session, files, scripts and background execution. This path needs neither MCP nor an App Server client.
+Trust the project and review installed hooks with `/hooks`. Configure normal native permissions for workspace writes and the intended `nervelet` commands. The installer preserves permissions and trust requirements.
 
-Install a reference to the generated environment profile in project instructions and configure supported native recovery hooks. Preserve existing configuration, permissions and required hook trust review.
+## Installed files
 
-Codex documents `SessionStart(source=compact)` restoration before the next root-session model request, including mid-turn automatic compaction. Its hook context has developer authority: restore trusted operating rules there, and keep sensor data in ordinary step output. `Stop` can request continuation; use it only for a bounded reminder. [Codex hooks](https://learn.chatgpt.com/docs/hooks).
+- `.codex/hooks.json`: Nervelet's `SessionStart` and guarded `Stop` hooks.
+- `AGENTS.md`: a managed section pointing to the operating profile and step loop.
+- `.codex/config.toml`: created with `features.hooks = true` only if absent; existing configuration remains unchanged. An explicit project layer anchors hook discovery.
 
-The shared [recovery gate](../../DESIGN.md#6-compaction-keep-exact-sources-small) prevents new commands until a post-recovery observation has been acknowledged. Native tools other than `nervelet step` do not implicitly refresh sensors.
+Windows hooks include `commandWindows`; Unix hooks quote the Node executable and CLI path. Re-run installation after relocating the package or project because hook paths are absolute.
 
-## Later embedded applications
+## Recovery
 
-DroneRTS already owns native Codex sessions through App Server and exposes tools through MCP. Preserve that deployment while qualifying an alternative. Experimental `dynamicTools` provide a possible direct tool path without MCP, but are not part of the initial CLI integration. [App Server](https://learn.chatgpt.com/docs/app-server#start-or-resume-a-thread).
+Codex documents `SessionStart(source=compact)` before the next root-session model request, including mid-turn automatic compaction. Hook context has developer authority. Nervelet injects only a short trusted reminder there; exact profile and environment data arrive in the next step. [Codex hooks](https://learn.chatgpt.com/docs/hooks).
 
-Native tool policy and isolation remain application responsibilities. Enabling an unrestricted host shell would change DroneRTS's experiment and is not an acceptable transport substitution.
+The hook writes a durable marker. The next step gates commands, returns exact `recovery.instructions` and fresh available evidence, then requires acknowledgement. The Stop hook gives at most one reminder while the loop remains active. Native sessions, scripts, files and background execution stay native.
 
-## Qualification
+## Current Windows limitation
 
-Test one root session on a pinned CLI version: shell output, native execution handles, cancelled waits, Stop, startup/resume and three successive compactions with active work. Hooks do not cover every possible native tool path; command enforcement belongs in the environment adapter. Report unsupported recovery explicitly.
+The tested CLI downgraded `--sandbox workspace-write` to read-only when its Windows sandbox was unconfigured. Configuring the native unelevated sandbox then failed file writes with a split-writable-roots error. Nervelet received no command batch in those runs. We did not disable sandboxing to declare a pass. A working native workspace/tool permission configuration is required; Linux/macOS and other Codex versions have not been live-qualified here.
 
-Existing DroneRTS actor types need separate qualification during its integration. Nervelet's initial version does not create or coordinate subagents.
+The installer and recovery protocol have deterministic tests. Actual repeated native compaction remains unqualified. Hook installation alone is not proof of long-session recovery.
+
+## Embedded applications later
+
+The current integration uses native shell/exec, local IPC and JSON. It needs neither MCP nor an App Server client. DroneRTS already owns native sessions through App Server and supplies isolated MCP tools; preserve that deployment until a replacement preserves its capabilities and image delivery. Experimental dynamic tools are a possible separate future transport. [App Server](https://learn.chatgpt.com/docs/app-server#start-or-resume-a-thread).
+
+Nervelet v0.1 does not create or coordinate native child agents.

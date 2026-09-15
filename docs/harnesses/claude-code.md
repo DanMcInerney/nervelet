@@ -1,35 +1,33 @@
 # Claude Code integration
 
-**Proposed module:** `harnesses/claude-code/`. No implementation or version qualification yet.
+**Implemented:** `nervelet/claude-code`. Live basic-loop test passed on Claude Code **2.1.270**. [Evidence and limits](../validation.md).
 
-## Initial path
+```sh
+nervelet init --harness claude-code
+nervelet serve
+# In another terminal, same project:
+claude
+```
 
-Use an ordinary Claude Code session with its native Bash and file tools. The agent calls `nervelet step`; JSON comes back as shell output in the existing conversation. No Agent SDK or MCP server is required for this path.
+The installer merges its own entries into `.claude/settings.local.json` and a managed section in `CLAUDE.md`. Existing hooks, instructions and permissions remain. Re-running installation updates the Nervelet entries. Generated `.nervelet/` runtime files are ignored by Git. No Agent SDK or MCP server is used.
 
-Install project instructions that point to the exact generated environment profile. Keep developer configuration separate from runtime goals, observations and notes. Do not overwrite existing project instructions or permissions during setup.
+## Native boundaries
 
-## Minimal native hooks
+| Hook | Behavior |
+| --- | --- |
+| `SessionStart`: startup/resume/clear/compact | Write a recovery marker and inject a short instruction to call step. |
+| `Stop` | One guarded reminder if the bridge remains active; no reminder after Stop, a fault or an unavailable bridge. |
 
-Claude documents `SessionStart` sources including startup, resume and compact; `Stop` can request continuation, but has a consecutive-continuation cap and does not run on user interruption. [Hooks reference](https://code.claude.com/docs/en/hooks).
+The next step returns exact `recovery.instructions`, current goal, own state, jobs and optional `working.md`. Command effects remain gated until the model echoes that bundle ID. Full profiles stay out of hook output, avoiding large hook-context payloads. If a native hook fails, treat recovery as unqualified and obtain a fresh observation explicitly.
 
-The module should use these boundaries to:
+Claude documents startup/resume/compact sources and Stop continuation. Stop does not run on user interruption and has native continuation limits. Our `stop_hook_active` guard permits one reminder; this is not an unattended scheduler. [Native hooks](https://code.claude.com/docs/en/hooks).
 
-- Restore trusted operating instructions and mark the core's recovery gate.
-- Give at most a bounded reminder to call `step` when the active loop ends prematurely.
-- Stop prompting when the loop is stopped, completed, out of budget or failing to progress.
+## Native tools
 
-The normal loop is repeated model-issued steps. A Stop hook is a fallback, not a perpetual scheduler. Keep waits bounded and cancellation available through `nervelet stop`, independent of a model turn. Do not assume Ctrl+C in Claude physically stopped the device; the adapter's controller-loss policy remains authoritative.
+Use Bash for `nervelet step`, native file tools for request JSON and scripts, and normal background execution where useful. Agent-authored scripts use the same bridge client; they must not independently open the device or acknowledge evidence the model never received.
 
-Claude also documents `PostToolBatch` context injection after a complete native tool batch. Automatic sensor injection there is deferred; explicit step results give the initial version one clear observation boundary. [Batch hook](https://code.claude.com/docs/en/hooks#posttoolbatch).
+Permissions must permit the intended Nervelet commands and workspace writes. The installer does not grant them automatically. Native file tools do not refresh sensors. Automatic `PostToolBatch` injection and same-result images are deferred.
 
-## Native features stay native
+`nervelet stop` invokes the adapter's stopping policy independently of the model. Ctrl+C in Claude is a different event; valid device work may continue while the bridge remains alive.
 
-Use Claude's workspace for code and a short optional `working.md`. Preserve native background task IDs and status in their normal tool results. Domain jobs are reported by Nervelet. Shell permission settings are not a sandbox around the device; enforce command validation in the adapter and use only the configured device connection.
-
-For cameras, return immutable paths for native image reads. Same-result multimodal delivery is outside the initial shell integration.
-
-## Qualification
-
-Test the actual installed CLI: start/resume/manual and automatic compaction, visible step output, acknowledgement loss, bounded continuation, interrupted waits, profile changes and a running domain job through three compactions. Test a hook failure explicitly; do not claim recovery support merely because configuration was written.
-
-Additional native agents and programmatic session supervision are deferred.
+The live test covered startup hook delivery, a native request-file write, a two-command batch, a completed job observed in a later step and explicit Stop. Three repeated recovery cycles are deterministic tests; actual manual/automatic compaction and uninterrupted long sessions still need separate qualification.

@@ -4,7 +4,7 @@ Read [README.md](README.md) and [DESIGN.md](DESIGN.md) before changing the libra
 
 ## Scope
 
-This repository currently contains the design. Runtime code, harness adapters and environment adapters are not implemented. Keep proposed behavior distinct from implemented and tested behavior.
+The TypeScript runtime, CLI, harness installers, simulated environment and optional serial adapter are implemented. Read [validation](docs/validation.md) for tested versions and remaining qualification. Keep proposed behavior distinct from implemented and tested behavior.
 
 The initial library connects one native coding-agent session to one persistent bridge through its shell tool and a local CLI. Sources can be APIs, event feeds, robots or simulations. Simplicity, compact observations and one owner per concept are requirements. DroneRTS is the canonical usage, not the core schema.
 
@@ -32,6 +32,8 @@ The initial library connects one native coding-agent session to one persistent b
 ## Verification
 
 For documentation changes, check links, fenced diagrams and `git diff --check`.
+
+Use Node 24+. Run `npm ci` and `npm test` (includes the TypeScript build). Native inference tests are explicit opt-in scripts, not part of the default suite. Do not claim actual native compaction or hardware qualification from simulated hook events or firmware compilation.
 
 For implementation, first test the bridge and CLI with a deterministic streaming environment. Test acquisition during inference, bounded waits/output, stale observations, duplicate/uncertain commands, delivery acknowledgement, partial batches, goal changes, cancellation and repeated compaction. Qualify one Claude Code session, then serial support and Codex. Qualify DroneRTS separately while preserving its existing actor isolation and image delivery.
 

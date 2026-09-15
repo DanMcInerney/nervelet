@@ -1,6 +1,6 @@
 # Integration decision: CLI and a persistent bridge
 
-**Research checked 2026-09-15. Proposed design; no runtime implementation yet.**
+**Research checked 2026-09-15. Implemented v0.1; see [validation](validation.md).**
 
 ## Decision
 

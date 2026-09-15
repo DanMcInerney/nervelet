@@ -1,0 +1,1 @@
+Inspect the simulated bench, try a short movement job while collecting temperature samples, then stop the loop.
