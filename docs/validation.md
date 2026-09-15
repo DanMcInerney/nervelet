@@ -6,11 +6,12 @@
 
 Starting revision: `af0c1bfc3514aa8096eb2b7ba1fba0b1b7f92edd`. The starting tree already had modified `AGENTS.md`/`README.md` and untracked `NEXT-DESIGN.md`/`docs/next/`. Those changes were preserved and the handoff received explicit implementation-status annotations. Baseline: **28/28 tests passed** before implementation.
 
-Current local suite: **57/57 passing tests**, including all original tests. `npm ci`, `npm test`, `npm run typecheck` (source, tests and examples), `npm run check:package`, `npm run check:docs`, and `git diff --check` pass. The repository CI now includes type, documentation and isolated package checks, but a remote CI run was not launched here. No paid inference, robots, DroneRTS matches or live sessions were used.
+Current local suite: **57/57 passing tests**, including all original tests. `npm ci`, `npm test`, `npm run typecheck` (source, tests and examples), `npm run check:package`, `npm run check:docs`, and `git diff --check` pass. [GitHub Actions run 35031618314](https://github.com/DanMcInerney/nervelet/actions/runs/35031618314) also passed installation, tests, types, documentation and isolated package checks on both Ubuntu and Windows for implementation commit `b529f3732660855196b92c446420be73e6001215`. No paid inference, robots, DroneRTS matches or live sessions were used.
 
 | Component | Local version/evidence |
 | --- | --- |
 | Platform | Windows, Node 24.15.0, npm 11.12.1 |
+| Remote CI | Ubuntu and Windows, Node 24.20.0, npm 11.19.0 |
 | TypeScript / Node types | 5.9.3 / 24.13.4 |
 | Ajv / schema dialect | 8.20.0 / draft-07 |
 | MCP TypeScript SDK | 1.30.0, pinned optional peer and development dependency |
