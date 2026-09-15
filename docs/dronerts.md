@@ -6,7 +6,7 @@ The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a
 
 | Standalone library | DroneRTS environment/application |
 | --- | --- |
-| Native session lifecycle and compaction recovery | Existing native Codex pilots and their configured model |
+| Native recovery integration | Existing native Codex pilots and their configured model |
 | Versioned received goal and delivery boundary | Actual per-drone instruction receipt and match lifecycle |
 | Compact observation envelope | Own pixels, telemetry, equipment, cargo, jobs and inbox |
 | Batch admission contract | Existing compatible commands and one movement writer |
@@ -17,15 +17,26 @@ Keep the simulation and its rules in DroneRTS. The library does not acquire batt
 
 The environment combines DroneRTS sensor acquisition, native radio events and existing command/job interfaces. Its state schema owns pose, velocity, held equipment and cargo. Its source profile requires fresh camera acquisition at model-facing steps; the generic library permits environments with no images. Existing `observe`, `wait` and `exchange` names can remain application aliases for the shared step contract.
 
-Native actor creation, tool delivery and compaction behavior go through the [Codex harness adapter](harnesses/codex.md). Preserve the canonical application's child actors; qualify that mode separately from dedicated root sessions. Do not move game-specific launch gating or tactical coordination into the harness module.
+DroneRTS retains actor creation and session control. The eventual embedded [Codex integration](harnesses/codex.md) translates recovery boundaries for those actors. The initial single-agent CLI does not replace the fleet. Do not move game-specific launch gating or tactical coordination into the harness module.
 
 ## Existing behavior
+
+The current transport is MCP. DroneRTS launches `codex app-server --stdio` and controls native sessions over JSON-RPC. Each pilot receives a role-bound local MCP endpoint; tool calls dispatch to the simulation, whose result includes the observation bundle. Codex owns the reasoning/tool loop. The simulation and local controllers continue independently of inference.
+
+```mermaid
+flowchart LR
+    R["DroneRTS runtime"] <-->|"stdio JSON-RPC"| C["Codex App Server and native pilots"]
+    C <-->|"Role-bound local MCP"| T["DroneRTS tool dispatcher"]
+    T <-->|"Commands / sensor bundle"| S["Simulation and local controllers"]
+```
+
+The native MCP server is a transport, not the component that makes the loop autonomous. Source: [App Server process](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime-rpc.ts), [MCP dispatcher](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime-mcp.ts). This description was checked against the local source; remote files may reflect a different revision.
 
 Normal living-pilot direct tool results and aggregate `exchange` results attempt a fresh camera acquisition and return timestamped self-state, equipment, cargo, velocity, jobs, routines and unread messages. Capture failure is explicit. Internal controller telemetry does not acquire a new image; routine camera reads use the latest model-acquired frame.
 
 `exchange` admits up to eight compatible operations with individual outcomes. Admission is separate from physical completion. Local control continues while the agent thinks or waits.
 
-The runtime observes native compaction events. Exact goal restoration and the proposed refresh gate remain implementation work.
+The runtime observes native compaction events. The proposed restoration contract and refresh gate remain implementation work.
 
 Source references: [tools and instructions](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime-tools.ts), [bundle assembly](https://github.com/DanMcInerney/DroneRTS/blob/main/server/game.ts), [native runtime](https://github.com/DanMcInerney/DroneRTS/blob/main/server/runtime.ts), [onboard contract](https://github.com/DanMcInerney/DroneRTS/blob/main/ONBOARD.md). These links require access to the source repository.
 
@@ -56,8 +67,8 @@ Source: [QA investigation, first fresh single haul](https://github.com/DanMcIner
 
 ## Integration sequence
 
-1. Implement and test the [portable contract](../DESIGN.md) using a deterministic API-only environment and native-session test doubles; prove the core works without game or robot fields.
-2. Implement the Codex adapter, including manual/automatic compaction and actual child-session lifecycle.
-3. Map existing DroneRTS tools and data sources through the environment boundary without changing simulation behavior.
+1. Implement and test the [single-agent CLI contract](../DESIGN.md) with a fake environment, Claude Code, serial support and Codex.
+2. Separately qualify the existing DroneRTS actor lifecycle and observation transport for an embedded integration.
+3. Map existing DroneRTS tools and data sources through the environment boundary without changing simulation behavior. Keep its current MCP bridge until a replacement preserves isolation and same-result images; enabling a host shell is not a drop-in substitute.
 4. Prove existing control, conservation, isolation and cancellation checks still pass.
 5. Run bounded real-agent trials before making claims about recovered understanding or autonomous progress.

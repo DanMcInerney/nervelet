@@ -1,63 +1,35 @@
-# Architecture choices and related projects
+# Integration decision: CLI and a persistent bridge
 
-**Research checked 2026-09-15.** These are design recommendations, not claims of implemented support or production qualification.
+**Research checked 2026-09-15. Proposed design; no runtime implementation yet.**
 
-## Decision: library first
+## Decision
 
-Nervelet should be an embeddable library that supervises native sessions and delivers external context. For harness-powered robots, this is the smallest useful architecture: keep native agent execution and domain control, add only the missing coordination.
+Use one ordinary Claude Code or Codex session. Give it a CLI through its native shell tool. Keep continuous acquisition in a small persistent bridge. Install only the native instructions and hooks needed to explain and recover the loop.
 
-| Form | Fits | Decision |
+| Piece | Needed now? | Why |
 | --- | --- | --- |
-| Embedded library | Continuous collection, bounded delivery, lifecycle and command coordination inside an existing application | Primary implementation. |
-| Thin host process | Runs the same library when an application cannot embed it | Optional deployment wrapper. |
-| Codex/Claude plugin | Installs tools, instructions, hooks and launcher commands | Optional distribution layer. |
-| Orchflows workflow | Creates/configures a loop, runs a bounded trial, reviews evidence, improves the next version | Optional outer workflow. |
-| Durable workflow engine | Cross-machine scheduling and restart recovery for long-lived deployments | Add only for a demonstrated deployment requirement. |
-| Replacement agent framework | Builds another inference/tool/memory loop | Outside the chosen scope; native harnesses already supply that machinery. |
+| Core library + CLI | Yes | Shared step, goal, delivery and cancellation contract. |
+| Persistent I/O bridge | Yes | Keeps collecting while the agent reasons or edits files. Embed it when an application already has a host process. |
+| Harness modules | Yes | Small native configuration and lifecycle integration. |
+| Plugin packaging | No | An installer can be added once the integration works. |
+| Agent SDK / App Server launcher | No for the initial CLI use | Useful later for an application that must own unattended native session lifecycle. |
+| MCP | No | Native shell calls can carry JSON requests and results. |
+| Multiple agents or workflow engine | No | Outside the initial scope. |
 
-Plugins can bundle skills, MCP servers and hooks. That is useful packaging, but packaging alone does not guarantee collection while the model reasons, bounded queues, command ownership, recovery or an idle-session wakeup. The lifecycle bridge must be tested in each host. [Codex plugins](https://learn.chatgpt.com/docs/plugins), [Claude Code plugins](https://code.claude.com/docs/en/plugins).
+A single shell command that repeatedly starts a fresh model would lose native session continuity. A single shell command that never returns would withhold observations from the model. Instead, keep the device connection in the bridge and return from each bounded step.
 
-MCP provides the shared tool transport. Its resources are application-driven; notifications say data changed, not that an agent read it or started reasoning. Keep delivery acknowledgement and wake ownership in the library/harness bridge. [MCP resources](https://modelcontextprotocol.io/specification/2025-11-25/server/resources).
+## Harness differences
 
-## Orchflows fit
+Claude's documented SDK custom tools use an **in-process MCP server**. Removing the network server does not remove MCP. The initial design uses native Bash instead. [Claude custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools).
 
-Current Orchflows composes work and independent review through native agents. Its architecture explicitly leaves execution to the host and adds no runtime or scheduler. That makes it suitable for directing a Nervelet run while Nervelet handles continuous collection and delivery. [Current architecture](https://github.com/DanMcInerney/orchflows/blob/main/docs/architecture.md).
+Codex App Server exposes experimental `dynamicTools` for applications needing native custom tools without MCP. That is a possible later transport, with version qualification; the common CLI path needs no experimental tool API. [Codex App Server](https://learn.chatgpt.com/docs/app-server#start-or-resume-a-thread).
 
-A useful proposed workflow:
+CLI output is text. Direct same-result images and host-controlled session wakeups need additional native integration; they are not implicit CLI features. [Design limits](../DESIGN.md#camera-and-ongoing-execution).
 
-```mermaid
-flowchart LR
-    C["Choose goal, environment and bounds"] --> R["Launch bounded Nervelet run"]
-    R --> E["Collect outcome and evidence"]
-    E --> V["Independent assessment"]
-    V --> F["Refine config or code for next run"]
-```
+## Dependencies worth using
 
-A workflow can author a goal or adapter, launch a run with an explicit duration/cost bound, inspect the report and request a revision. During the run, retain the same native pilot session. Do not create a fresh worker/reviewer for each sensor batch or infer a team strategy outside the canonical application's rules.
+Use Node's existing async primitives and filesystem support. Add [Node SerialPort](https://serialport.io/docs/) for a serial adapter: it supplies serial streams and mock bindings. The API-only core needs no serial dependency.
 
-An Orchflows-only prototype can call observe/act/wait tools. Once those tools implement ongoing acquisition, queues, jobs and lifecycle, that deterministic component is effectively Nervelet. Keep one implementation and let the workflow call it.
+The native harness already supplies code execution, file tools, session history and compaction. Keep those owners. No additional agent framework or memory store is needed for the first implementation.
 
-## Related projects and dependencies
-
-| Project | Useful capability | Recommendation |
-| --- | --- | --- |
-| Official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) | Native Claude Code execution and session integration | Direct dependency of the Claude adapter. |
-| [Codex App Server](https://learn.chatgpt.com/docs/app-server) | Rich native session lifecycle and streamed tool/compaction events | Direct integration for the Codex adapter; pin and qualify the actual CLI and transport. |
-| Official [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) | Tool schemas, multimodal results and client/server transport | Reuse where MCP is the chosen bridge; match supported protocol versions. |
-| [XState](https://stately.ai/docs/actors) | Actors process events sequentially with encapsulated state | Useful if lifecycle logic grows complex. Start with an explicit small state machine and native async primitives. |
-| [Temporal](https://docs.temporal.io/workflow-execution/continue-as-new) | Durable workflows and continuation with a fresh event history | Optional deployment supervisor; not required for an embedded loop. |
-| [LangGraph](https://docs.langchain.com/oss/javascript/langgraph/persistence) | Persisted workflow checkpoints and execution state | Consider for an outer graph workflow; avoid duplicating native conversation/compaction ownership. |
-| [twaldin/harness](https://github.com/twaldin/harness) | Common interfaces over coding-agent tools; explicit capability and cancellation behavior | Reference its qualification discipline. Its README currently marks Codex App Server sessions unsupported, so it does not replace the required adapter. |
-| [OpenRAL](https://github.com/OpenRAL/openral) | Separates robot control, perception and slower reasoning | Related robotics architecture. Its broader hardware/world-state stack is unnecessary for API-only loops; study boundaries rather than adopt it as core. |
-
-The official SDKs and established workflow/state libraries supply useful building blocks. Repository descriptions alone do not establish end-to-end production reliability for harness-powered robots. No reviewed project demonstrates this exact contract across Codex, Claude Code, continuous sensors and compaction.
-
-Temporal retries activities and recommends idempotent effects. A robot action cannot be made safe to replay merely by putting it in a workflow: retain effect IDs, reconcile the actual controller and acquire new observations after recovery. Its workflow history rollover is separate from native agent context compaction. [Temporal activities](https://docs.temporal.io/activities).
-
-## Minimal initial dependencies
-
-Use TypeScript, native promises/async iterators, `AbortSignal`, a small lifecycle state machine and the selected native harness integration. Bring in the official MCP SDK only for MCP transport.
-
-Defer databases, vector memory, RxJS, workflow engines, autonomous planners and a general plugin loader until a specific requirement justifies one. Existing application storage can persist exact goal/cursor records; it should not become a second agent memory system.
-
-Keep the implementation sequence in [DESIGN.md](../DESIGN.md#10-implementation-order-and-proof) authoritative.
+Start with the [Arduino example](arduino.md). [DroneRTS](dronerts.md) remains the canonical application for later integration, with its stronger isolation and image-delivery requirements.

@@ -1,33 +1,25 @@
-# Codex harness adapter
+# Codex integration
 
 **Proposed module:** `harnesses/codex/`. No implementation or version qualification yet.
 
-## Integration
+## Initial path
 
-Use Codex App Server for the lifecycle control this design needs: native sessions, streamed items, tool delivery, continuation and interruption. Prefer local stdio and pin the installed CLI/schema version. Generate types from that binary where supported. Keep App Server experimental surfaces behind explicit capability checks. [Official App Server documentation](https://learn.chatgpt.com/docs/app-server).
+Use Codex's native shell/exec tool to call the same `nervelet` CLI. Preserve the native session, files, scripts and background execution. This path needs neither MCP nor an App Server client.
 
-The application can let this adapter create a dedicated session or attach an existing actor through a host bridge. Attaching does not create another inference loop.
+Install a reference to the generated environment profile in project instructions and configure supported native recovery hooks. Preserve existing configuration, permissions and required hook trust review.
 
-## Native differences this module owns
+Codex documents `SessionStart(source=compact)` restoration before the next root-session model request, including mid-turn automatic compaction. Its hook context has developer authority: restore trusted operating rules there, and keep sensor data in ordinary step output. `Stop` can request continuation; use it only for a bounded reminder. [Codex hooks](https://learn.chatgpt.com/docs/hooks).
 
-| Concern | Adapter responsibility |
-| --- | --- |
-| Conversation | Track native thread/session and turn IDs separately from the logical Nervelet loop ID. |
-| Tool calls | Bind Nervelet tools through configured MCP or a qualified native custom-tool path; return results into the active turn. |
-| Compaction | Normalize `contextCompaction` lifecycle items. Mark refresh before new environment effects can be admitted. |
-| Instructions | Preserve native developer instructions and schemas; re-establish them through verified restoration hooks. |
-| Completion/interrupt | Distinguish normal turn completion, interruption, errors and limits. Do not equate a finished turn with a finished external goal. |
-| Native work | Expose permitted background execution IDs/status and workspace access; preserve their native ownership. |
-| Capabilities | Honor model/effort, tools, sandbox and permission settings. Unsupported settings fail explicitly. |
+The shared [recovery gate](../../DESIGN.md#6-compaction-keep-exact-sources-small) prevents new commands until a post-recovery observation has been acknowledged. Native tools other than `nervelet step` do not implicitly refresh sensors.
 
-Codex documents `SessionStart(source=compact)` context restoration before the next model request for **root** sessions, including automatic compaction within a turn. That does not establish child-session support. Qualify the actual actor type used by DroneRTS. [Hooks](https://learn.chatgpt.com/docs/hooks#sessionstart).
+## Later embedded applications
 
-Hook context can have developer authority. Use it for trusted operating instructions; restore external observations and peer text as data at their original authority.
+DroneRTS already owns native Codex sessions through App Server and exposes tools through MCP. Preserve that deployment while qualifying an alternative. Experimental `dynamicTools` provide a possible direct tool path without MCP, but are not part of the initial CLI integration. [App Server](https://learn.chatgpt.com/docs/app-server#start-or-resume-a-thread).
 
-Steering is a supported boundary, not a mechanism for replacing the model's private reasoning on every sensor update. MCP notifications likewise do not prove the model ingested data.
+Native tool policy and isolation remain application responsibilities. Enabling an unrestricted host shell would change DroneRTS's experiment and is not an acceptable transport substitution.
 
-## Required qualification
+## Qualification
 
-Test native tool-result inclusion, interrupted capture/waits, context restoration, root/child boundaries, capability changes and reconnects. Verify that a native helper cannot bypass the environment's command owner.
+Test one root session on a pinned CLI version: shell output, native execution handles, cancelled waits, Stop, startup/resume and three successive compactions with active work. Hooks do not cover every possible native tool path; command enforcement belongs in the environment adapter. Report unsupported recovery explicitly.
 
-The generic Codex SDK can be evaluated if it exposes every required lifecycle boundary. A one-shot CLI wrapper alone does not satisfy this persistent-session contract.
+Existing DroneRTS actor types need separate qualification during its integration. Nervelet's initial version does not create or coordinate subagents.

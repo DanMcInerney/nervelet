@@ -2,39 +2,34 @@
 
 **A small nervous system for coding agents.**
 
-Nervelet is a library for autonomous coding-agent sessions that receive continuously changing data and pursue a goal. Sources can be robot sensors, simulation state, APIs or event feeds. Commands and local jobs are optional.
+Connect one Claude Code or Codex agent to continuously changing sensors, APIs or a simulation. The harness runs the agent; Nervelet keeps the connection open and delivers observations and commands.
 
-**Status:** architecture and implementation specification. Runtime code and adapters are not implemented.
-
-## Architecture
+**Status:** design only. The library, CLI and integrations below are not implemented.
 
 ```mermaid
 flowchart LR
-    E["Environment: APIs, sensors, events"] --> N["Nervelet: delivery and lifecycle"]
-    N <--> H["Harness adapter: Codex or Claude Code"]
-    H <--> A["Native agent session and workspace"]
-    N --> X["Environment commands and jobs"]
-    X -. "Progress and results" .-> E
+    A["One native coding agent"] <-->|"Shell: nervelet step"| B["Nervelet bridge"]
+    B <-->|"Continuous I/O"| D["Device, API or simulation"]
+    A <--> W["Native scripts and files"]
 ```
 
-Data acquisition and valid jobs continue while the model thinks. Nervelet delivers bounded, timestamped context at decision boundaries; it does not call the model for every sample.
+## The small version
 
-## Keep it small
+- **One persistent bridge** collects data while the model thinks.
+- **One step command** observes, waits, or submits compatible commands together.
+- **One compact result** contains the exact goal, dated data, own status, running jobs and unread events.
+- **Small harness modules** install instructions and recovery hooks. Native sessions, execution and compaction stay native.
+- **Plain files** preserve essential instructions and notes across compaction.
 
-- **Core library:** one session supervisor, two integration boundaries: harness and environment.
-- **Native harness modules:** preserve sessions, tools, files and compaction; handle each host's quirks explicitly.
-- **Compact context:** exact received goal, latest observations, current execution status and unread events.
-- **Simple recovery:** restore exact instructions and essential files; refresh observations before new commands.
-- **Optional packaging:** plugins expose tools/hooks; Orchflows can launch and assess bounded runs.
+Use the native shell tool; no MCP is required. Initial scope is one agent and one bridge. A plugin installer, multiple agents and unattended process supervision can wait.
 
-DroneRTS is the canonical integration and test case. Its game rules and vehicle fields stay in its environment adapter. An API-only loop needs no robot schema or camera.
+DroneRTS is the canonical application; its vehicle fields and game rules stay outside the core.
 
 ## Read
 
-- [Design](DESIGN.md): ownership, interfaces, timing and recovery.
-- [Architecture choices and related projects](docs/architecture-options.md): library, plugin, Orchflows and dependency decisions.
-- [Codex adapter](docs/harnesses/codex.md) · [Claude Code adapter](docs/harnesses/claude-code.md)
-- [DroneRTS integration](docs/dronerts.md)
+- [Design](DESIGN.md): the loop, ownership, batches, freshness and recovery.
+- [Arduino example](docs/arduino.md): the proposed user experience.
+- [Integration decision](docs/architecture-options.md): why a CLI and bridge.
+- [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md)
+- [How DroneRTS works today](docs/dronerts.md)
 - [Development instructions](AGENTS.md)
-
-Nervelet: the small connection carrying observations and actions between an agent and its environment.
