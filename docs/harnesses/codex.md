@@ -1,5 +1,7 @@
 # Codex integration
 
+**v0.2 addition:** `nervelet/drivers/codex` implements managed App Server sessions, borrowed-client ownership, native recovery notifications and MCP tools. The installer export below keeps its original meaning. See [the driver contract](../v2.md) and [new qualification status](../validation.md). Deterministic protocol tests are not native parking, image or compaction proof.
+
 **Implemented:** `nervelet/codex`. **Partially qualified** on Codex CLI **0.144.0**: native startup hook, recovery observation and Stop worked. The full request-file/batch scenario was blocked by this host's Windows sandbox. [Evidence](../validation.md).
 
 ```sh
@@ -31,7 +33,7 @@ The tested CLI downgraded `--sandbox workspace-write` to read-only when its Wind
 
 The installer and recovery protocol have deterministic tests. Actual repeated native compaction remains unqualified. Hook installation alone is not proof of long-session recovery.
 
-## Embedded applications later
+## Historical v0.1 embedding boundary
 
 The current integration uses native shell/exec, local IPC and JSON. It needs neither MCP nor an App Server client. DroneRTS already owns native sessions through App Server and supplies isolated MCP tools; preserve that deployment until a replacement preserves its capabilities and image delivery. Experimental dynamic tools are a possible separate future transport. [App Server](https://learn.chatgpt.com/docs/app-server#start-or-resume-a-thread).
 

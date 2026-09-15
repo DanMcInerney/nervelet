@@ -2,6 +2,8 @@
 
 Read [README.md](README.md) and [DESIGN.md](DESIGN.md) before changing the library. Read the relevant [Codex](docs/harnesses/codex.md) or [Claude Code](docs/harnesses/claude-code.md) contract for harness work, and [docs/dronerts.md](docs/dronerts.md) for the canonical application.
 
+[NEXT-DESIGN.md](NEXT-DESIGN.md) is the user-requested future implementation handoff, revised after Fable’s review and the accepted TypeScript decision. Read its [contract](docs/next/CONTRACT.md), [rationale](docs/next/RATIONALE.md) and [qualification plan](docs/next/QUALIFICATION.md) for future implementation. It supersedes the initial scope exclusions below for the refactor: evolve the TypeScript Bridge, add native/API drivers, MCP and managed waits, and keep the bounded engineer optional/nondefault. Python is only a future optional device adapter. Existing behavior and validation remain v0.1; preserve them through compatibility tests. DroneRTS should embed the core in its existing Node process; retain its dependency/quota/isolation checks. Actual gameplay migration is outside the library-refactor scope.
+
 ## Scope
 
 The TypeScript runtime, CLI, harness installers, simulated environment and optional serial adapter are implemented. Read [validation](docs/validation.md) for tested versions and remaining qualification. Keep proposed behavior distinct from implemented and tested behavior.

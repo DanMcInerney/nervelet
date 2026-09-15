@@ -12,6 +12,9 @@ export interface Profile {
   version: string;
   instructions: string;
   commands: Record<string, CommandDefinition>;
+  /** Only these dated numeric inputs may be used by conditional waits. */
+  waitFields?: Record<string, { source: 'state' | 'sample'; sample?: string; path?: string[]; maxAgeMs: number }>;
+  camera?: { policy: 'none' | 'capture_on_step' | 'latest'; maxAgeMs?: number };
 }
 export interface Sample {
   value: Json;
@@ -22,8 +25,8 @@ export interface Sample {
   maxAgeMs?: number;
   reason?: string;
 }
-export interface Event { seq: number; kind: string; atMs: number; data: Json }
-export type JobStatus = 'running' | 'completed' | 'blocked' | 'cancelled' | 'failed';
+export interface Event { seq: number; kind: string; atMs: number; data: Json; id?: string; redelivered?: boolean }
+export type JobStatus = 'pending' | 'running' | 'stopping' | 'completed' | 'blocked' | 'cancelled' | 'failed';
 export interface Job {
   id: string;
   status: JobStatus;
@@ -49,25 +52,56 @@ export interface Snapshot {
   hasMore: boolean;
   fault?: string;
 }
-export interface CommandContext { signal: AbortSignal; goalVersion: number; epoch: string }
+export interface CommandContext {
+  signal: AbortSignal; goalVersion: number; epoch: string;
+  /** Call immediately before each effect, after asynchronous preconditions. */
+  assertCurrent?(): void;
+}
+export interface Changes { readonly sequence: number; subscribe(listener: () => void): () => void }
+export interface ImageAttachment {
+  type: 'image'; id: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+  /** Actual encoded pixels, kept separate from observation text by transports. */
+  data: string;
+  receivedMs: number; acquired?: { clock: string; ms: number };
+  valid: boolean; reused: boolean; reason?: string;
+}
+export interface ControlOutcome { status: 'confirmed' | 'stopping' | 'unknown'; reason?: string }
 export interface Environment {
   readonly profile: Profile;
+  readonly changes?: Changes;
   start(signal: AbortSignal): Promise<void>;
   snapshot(after: number, signal: AbortSignal): Promise<Snapshot>;
+  /** Optional final acquisition. snapshot must be cheap and non-consuming. */
+  capture?(signal: AbortSignal): Promise<ImageAttachment[]>;
   acknowledge(through: number): void;
   /** Events/jobs/faults wake a wait. Streaming samples alone may coalesce. */
   wait(signal: AbortSignal): Promise<void>;
   execute(command: Command, context: CommandContext): Promise<Receipt>;
-  cancel(id: string, signal: AbortSignal): Promise<void>;
-  stop(signal: AbortSignal): Promise<void>;
+  cancel(id: string, signal: AbortSignal): Promise<void | ControlOutcome>;
+  stop(signal: AbortSignal): Promise<void | ControlOutcome>;
+  /** Authoritative reconciliation only; never implement by re-executing. */
+  reconcile?(command: Command, signal: AbortSignal): Promise<Receipt>;
   close(): Promise<void>;
 }
-export interface StepRequest { seen?: string; goalVersion?: number; waitMs?: number; commands?: Command[] }
-export interface Goal { text: string; version: number; status: 'active' | 'stopped' }
+export type WaitCondition = { kind: 'event'; type: string } | { kind: 'jobTerminal'; id: string } |
+  { kind: 'threshold'; field: string; op: 'gt' | 'gte' | 'lt' | 'lte'; value: number } |
+  { kind: 'change'; field: string; deadband: number };
+export interface WaitRequest { until: WaitCondition[]; reviewMs?: number }
+export interface StepRequest {
+  schemaVersion?: 2; loopRef?: string; seen?: string; goalVersion?: number;
+  waitMs?: number; commands?: Command[]; wait?: WaitRequest; checkpoint?: string;
+}
+export interface StepOptions { waitMode?: 'hold' | 'park'; maxHoldMs?: number; repeatInstructions?: boolean }
+export interface Goal { text: string; version: number; status: 'active' | 'stopped' | 'missing' }
+export interface GoalProvider { get(): Goal | undefined; subscribe?(listener: (goal: Goal) => void): () => void }
 export interface Bundle {
   id: string;
   epoch: string;
   deliveredMs: number;
+  schemaVersion?: 2;
+  loopRef?: string;
+  generation?: number;
+  assembledMs?: number;
   profile: string;
   loop: 'active' | 'paused' | 'stopped';
   rule: string;
@@ -81,6 +115,10 @@ export interface Bundle {
   hasMore?: boolean;
   recovery?: { generation: number; reason: string; instructions: string; note?: string };
   fault?: string;
+  attachments?: ImageAttachment[];
+  media?: { status: 'missing'; reason: string };
+  wait?: { status: 'parked' | 'ready'; token: string; reason?: string; deadlineMs?: number };
+  control?: ControlOutcome;
 }
 export interface Config {
   environment: () => Environment | Promise<Environment>;
@@ -96,4 +134,16 @@ export interface Limits {
   startupMs: number;
   receiptHistory: number;
   bundleHistory: number;
+  maxRecoveryBytes: number;
+  maxMediaBytes: number;
+  maxImages: number;
+  maxCheckpointBytes: number;
+  maxReviewMs: number;
+  maxJobs: number;
+}
+export interface Trace {
+  type: 'assembly' | 'acknowledgement' | 'admission' | 'completion' | 'wait' | 'wake' | 'control' | 'submission';
+  loopRef: string; atMs: number; id?: string; reason?: string; textBytes?: number; mediaBytes?: number;
+  turnId?:string; commandId?:string; completedMs?:number;
+  inputs?:{name:string;receivedMs:number;acquired?:{clock:string;ms:number};valid:boolean}[];
 }

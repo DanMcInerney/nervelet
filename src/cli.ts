@@ -23,8 +23,9 @@ const HELP=`nervelet — one native agent, one continuous environment
   stop                              Stop the loop; keep bridge available for inspection
   shutdown                          Stop and close the bridge
   status                            Read loop state
+  mcp                               Expose an existing bridge as MCP over stdio
 
-Use --cwd DIR to select a project. JSON results go to stdout. No MCP or model calls.
+Use --cwd DIR to select a project. JSON results go to stdout; mcp uses MCP framing. No model calls.
 `;
 async function stdin(limit:number):Promise<string> {
   let text='';for await(const chunk of process.stdin){text+=String(chunk);if(Buffer.byteLength(text)>limit)fail('capacity','stdin exceeds capacity.');}return text;
@@ -33,11 +34,15 @@ async function main():Promise<void> {
   const {values,positionals}=parseArgs({allowPositionals:true,options:{harness:{type:'string'},cwd:{type:'string'},config:{type:'string'},goal:{type:'string'},seen:{type:'string'},'wait-ms':{type:'string'},request:{type:'string'},file:{type:'string'},help:{type:'boolean'}}});
   const command=positionals[0];const cwd=resolve(values.cwd??process.cwd());
   if(values.help||!command){process.stdout.write(HELP);return;}
-  const allowed:Record<string,string[]>={init:['harness'],hook:['harness'],demo:['goal'],serve:['config','goal'],step:['seen','wait-ms','request'],cancel:[],goal:['file'],stop:[],status:[],shutdown:[]};
+  const allowed:Record<string,string[]>={init:['harness'],hook:['harness'],demo:['goal'],serve:['config','goal'],step:['seen','wait-ms','request'],cancel:[],goal:['file'],stop:[],status:[],shutdown:[],mcp:[]};
   if(!allowed[command])fail('invalid_input',`Unknown command ${command}. Use --help.`);
   if(positionals.length>(command==='cancel'?2:1)||Object.keys(values).some(key=>key!=='cwd'&&!allowed[command]!.includes(key)))fail('invalid_input','Unexpected arguments for this command.');
   let result:unknown;
-  if(command==='hook') {
+  if(command==='mcp') {
+    const {serveStdio}=await import('./transports/mcp.ts');
+    const metadata=await request<Pick<import('./handlers.ts').Handlers,'tools'|'instructions'|'loopRef'>>({method:'tools'},{cwd});
+    await serveStdio({...metadata,call:(name,args,signal)=>request({method:'tool',params:{name,args}},{cwd,signal})});return;
+  } else if(command==='hook') {
     if(!['claude-code','codex'].includes(values.harness??''))fail('invalid_input','Specify a harness.');
     result=await hook(JSON.parse(await stdin(65536)),cwd);
   } else if(command==='init') {

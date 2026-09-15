@@ -1,5 +1,7 @@
 # Adapter API
 
+**v0.2:** This page retains the compatible CLI/adapter surface. See [embedding and drivers](v2.md) for the full shared-handler API, protocol 2, injected goals, ownership options, conditional waits, media and reconciliation.
+
 One adapter owns the environment. The core owns goal/delivery coordination; the native harness owns the agent. See [types](../src/types.ts) and the small [demo adapter](../src/adapters/demo.ts).
 
 ## Configure
@@ -73,9 +75,9 @@ const observation = await request<Bundle>({ method: 'step' });
 console.log(JSON.stringify(observation));
 ```
 
-The model must read output before a subsequent call sends its ID as `seen`. Do not auto-ack inside a polling script. Use one in-flight step; cancel and Stop can run concurrently with a wait. Native scripts do not independently open the same device.
+The model must read output before a subsequent call sends its ID as `seen`. Do not auto-ack inside a polling script. Use one in-flight step; cancel and Stop can run concurrently with a wait. Native scripts do not independently open the same device. `snapshot` is now explicitly cheap and non-consuming; optional `capture` owns final media acquisition. The CLI compatibility path rejects image observations; MCP and capable drivers map typed pixels to native content.
 
-Public exports: `nervelet`, `nervelet/demo`, `nervelet/serial`, `nervelet/claude-code`, `nervelet/codex`. The optional serial dependency is loaded only when a real port is requested.
+Original exports remain: `nervelet`, `nervelet/demo`, `nervelet/serial`, `nervelet/claude-code`, `nervelet/codex`. Additions: `nervelet/mcp`, `nervelet/recorded`, and `nervelet/drivers/{codex,claude-code,api}`. The optional serial dependency is loaded only when a real port is requested; optional SDKs are outside the core import path.
 
 ## Default bounds
 

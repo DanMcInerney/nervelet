@@ -1,5 +1,7 @@
 # DroneRTS integration
 
+**v0.2 update:** The library now embeds directly in TypeScript. A [six-pilot deterministic fixture](../examples/dronerts/pilots.ts) verifies borrowed lifetimes, isolated goals/mail/images, quotas, one writer and independent control during blocked capture. It does not run DroneRTS, qualify native image delivery, migrate gameplay, or modify live sessions. The extraction context and live integration requirements below remain applicable.
+
 The design originated in [DroneRTS](https://github.com/DanMcInerney/DroneRTS), a continuous drone simulation. DroneRTS is the canonical future application; its rules remain application-specific. This document records the extraction context as of 2026-09-15. The standalone runtime is implemented; its DroneRTS integration is deferred.
 
 ## Boundary

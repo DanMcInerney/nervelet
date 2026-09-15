@@ -1,6 +1,76 @@
 # Validation
 
-**2026-09-15 · v0.1 implementation.** These checks establish the listed behavior only.
+**2026-09-15 · v0.2 TypeScript refactor.** These checks establish only the behavior described here. [Implementation and limits](v2.md).
+
+## v0.2 checks and versions
+
+Starting revision: `af0c1bfc3514aa8096eb2b7ba1fba0b1b7f92edd`. The starting tree already had modified `AGENTS.md`/`README.md` and untracked `NEXT-DESIGN.md`/`docs/next/`. Those changes were preserved and the handoff received explicit implementation-status annotations. Baseline: **28/28 tests passed** before implementation.
+
+Current local suite: **57/57 passing tests**, including all original tests. `npm ci`, `npm test`, `npm run typecheck` (source, tests and examples), `npm run check:package`, `npm run check:docs`, and `git diff --check` pass. [GitHub Actions run 35031618314](https://github.com/DanMcInerney/nervelet/actions/runs/35031618314) also passed installation, tests, types, documentation and isolated package checks on both Ubuntu and Windows for implementation commit `b529f3732660855196b92c446420be73e6001215`. No paid inference, robots, DroneRTS matches or live sessions were used.
+
+| Component | Local version/evidence |
+| --- | --- |
+| Platform | Windows, Node 24.15.0, npm 11.12.1 |
+| Remote CI | Ubuntu and Windows, Node 24.20.0, npm 11.19.0 |
+| TypeScript / Node types | 5.9.3 / 24.13.4 |
+| Ajv / schema dialect | 8.20.0 / draft-07 |
+| MCP TypeScript SDK | 1.30.0, pinned optional peer and development dependency |
+| Claude Agent SDK | 0.3.273, pinned optional peer; official types plus injected query fixture |
+| Serialport | 13.0.0; byte-stream fixtures, no UART |
+| Codex App Server schema | Generated locally with installed CLI 0.144.0; driver exercised with scoped protocol fixtures |
+| API provider/model | Local HTTP fixtures / `fixture-model`; no real provider/model qualification |
+
+Required behavior exercised:
+
+- Single Bridge shared by CLI, IPC, embedded handlers, MCP and driver paths. Packed legacy imports and installers retain their meaning.
+- Complete request validation before effects; compatible/partial batches; increasing IDs; known/expired/unknown receipts; authoritative reconciliation; no late effects after goal replacement.
+- No-goal startup, host-owned received versions, stale-generation acknowledgements and three synthetic recovery cycles with active jobs.
+- Event peek/ack, lost responses, stable redelivery IDs, partial slices, bounded delivery history and backpressure. V2 unacknowledged command results are redelivered.
+- Conditional event, threshold, deadband, review and actual terminal-job waits; invalid/stale input filtering; event arrival during registration and native closing response; invalidated wait tokens.
+- Fake managed supervision with no periodic idle calls, bounded unexpected finals, goal interruption and no overlapping operator turns. Borrowed clients/environments are not closed.
+- One final image capture per observation; capture interruption; typed MCP and native request image mapping. These assertions check protocol content, not model vision.
+- Official MCP SDK client/server in-memory and authenticated HTTP round trips. A real compiled `nervelet mcp` subprocess attaches to the existing IPC bridge and applies synthetic native recovery markers. Forged routing, missing credentials and browser-origin HTTP requests are rejected.
+- API HTTP pairing for every declared tool ID, concurrent `busy` results, provider message-field preservation, malformed/incomplete JSON, bounded retries, complete-exchange rotation, explicit model mismatch, unsupported images and HTTP authentication failure.
+- Six DroneRTS-shaped pilots in one Node process: isolated goals, images, inboxes and resource ownership; quotas; one pilot's blocked capture does not block another's control. No game migration or native child qualification is implied.
+- Finite recorded-action replay rejects divergent commands; it never invents a counterfactual result.
+
+## v0.2 measurements
+
+`npm run measure` uses the simulated bench, a fake driver and a bounded 128-record trace sink. It records JSON in ignored `.runtime/measurements.json`; `npm run check:package` records ignored package evidence. Set `NERVELET_MEASURE_MS` for a longer quiet window (1,000–3,600,000 ms). The figures below are local samples, not production latency or autonomous-performance guarantees.
+
+| Measurement | Local sample |
+| --- | --- |
+| Demo startup / ordinary / one-event text | About 2.7 KiB / 0.75 KiB / 0.90 KiB JSON |
+| 3,000 acknowledged streaming observations | About 0.92 s |
+| Post-GC heap growth over that run | About 0.52 MiB; allocator/JIT noise included |
+| Idle / peak RSS during observation workload | About 57 / 63 MiB, Node process included |
+| Event-loop delay p99 / maximum | About 18 / 18.5 ms under this workload |
+| Simulated Stop while parked | About 0.8 ms |
+| 60-second quiet streaming window | Zero periodic fake-driver turns; one useful event wake |
+| Post-GC heap during quiet window | 8,161,576 → 8,587,376 bytes; no leak-freedom claim |
+| Reliable-event high water | 2 events / 118 bytes; zero unread at end |
+| Delivery mappings after 3,000 observations | 32 (configured bound) |
+| Core-only installation | About 1.6 MB on disk, six packages; no optional MCP/Claude SDK/serial binaries |
+| Full development `node_modules` | 292,969,358 bytes, including selected SDK assets, serial and build/test dependencies |
+| Native subprocess RSS, model tokens/cache, billed cost | Unavailable: no native/API inference launched |
+
+Package checks build and pack the project, install it into a fresh temporary consumer with optional dependencies omitted, prohibit optional integration imports via a Node resolve hook, and run a Bridge command plus all original public-entry imports. The measurement excludes the separately installed Node executable from disk totals. Loading lazily does not erase the installed cost of SDKs.
+
+The 60,008 ms quiet-window trace and its sampled heap are recorded separately in the measurement JSON. Its zero-turn hourly estimate is extrapolated from one minute with a fake driver, not an hour of native inference. A multi-hour native soak and deployed DroneRTS resource accounting remain outstanding. The short workload does not establish leak freedom.
+
+## New-driver qualification gaps
+
+The Codex and Claude drivers implement lifecycle and media mappings, but **native image understanding, sustained native parking/tool holds, at least three actual compaction/resume cycles, and permission/auth/rate-limit/interruption recovery across real sessions remain unqualified**. Claude fixture input is injected into the official query-shaped interface; no SDK inference process was launched. Codex fixture notifications are synthetic. Capability reports explicitly label the lack of qualification. Native internal call counts are not guessed from host turns.
+
+The implementation follows the official [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude streaming-input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode), [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), [OpenRouter tool-pairing](https://openrouter.ai/docs/guides/features/tool-calling) and [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility) contracts. Documentation and installed types do not establish native behavior.
+
+The [managed examples](../examples/managed/claude-code.ts) require an explicit model before invoking inference; the [Codex example](../examples/managed/codex.ts) also requires an explicit executable. Qualify each chosen provider/model, auth mode, permissions and OS in a separately bounded run. The library never substitutes an API/local model for a native session.
+
+Further gaps: physical serial hardware; long-duration memory/transport soak; source-specific image freshness and decoding; provider-specific JSON constraints; crash-durable events/receipts; application-owned artifact and routine capabilities; and actual DroneRTS gameplay migration with its existing dependency/quota/isolation tests. Optional sequence helpers, persisted core store, engineer and Python device adapter are not implemented or enabled.
+
+## Historical v0.1 evidence
+
+The following records predate the new drivers. They remain evidence for the original CLI path only.
 
 ## Deterministic checks
 
@@ -63,6 +133,6 @@ These commands **use inference**. Claude has a $1 run budget; both have a 90 s p
 
 The script records bounded native logs and summaries in ignored `.runtime/`. These files can contain private context and credentials in the isolated native home; keep them out of Git. Owned bridges/processes are stopped on completion/failure. Tests target only the simulated environment, never DroneRTS or attached hardware.
 
-## Deferred
+## Deferred at the v0.1 baseline
 
-Native repeated-compaction qualification, complete Codex qualification, physical Arduino testing, camera acquisition/image delivery, process-crash durability and DroneRTS integration are separate work. Deterministic fixtures and a basic native loop do not establish robot autonomy or hardware readiness.
+V0.2 now implements typed image transport and the embedding fixtures; their native/hardware qualification remains separate. Native repeated-compaction qualification, complete Codex qualification, physical Arduino testing, process-crash durability and actual DroneRTS integration are still outstanding. Deterministic fixtures and a basic historical native loop do not establish robot autonomy or hardware readiness.
