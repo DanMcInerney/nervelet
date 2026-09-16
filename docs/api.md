@@ -6,13 +6,13 @@ One adapter owns the environment. The core owns goal/delivery coordination; the 
 
 ## Configure
 
-From a built checkout, `npm link` installs the CLI. For a **separate** application that imports the library, install that checkout as a local dependency too:
+Requires Node 24+. Install the library in your application:
 
 ```sh
-npm install /absolute/path/to/nervelet
+npm install nervelet
 ```
 
-The repository is not published to npm. A global CLI alone does not make package imports resolve in another project.
+Use `npx nervelet` for the locally installed CLI. Installed harness instructions use `nervelet` directly, so also use `npm install --global nervelet` for that path. A global CLI alone does not make package imports resolve in another project. For local library development, build the checkout and use `npm install /absolute/path/to/nervelet` instead.
 
 `nervelet.config.ts`:
 
@@ -26,7 +26,7 @@ export default defineConfig({
 });
 ```
 
-Write an exact objective in `goal.txt`, then run `nervelet serve`. Node 24 loads the TypeScript config directly; use erasable types rather than TypeScript syntax needing transformation.
+Write an exact objective in `goal.txt`, then run `npx nervelet serve`. Node 24 loads the TypeScript config directly; use erasable types rather than TypeScript syntax needing transformation.
 
 ## Implement Environment
 

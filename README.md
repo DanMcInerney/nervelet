@@ -18,7 +18,30 @@ flowchart LR
     W["APIs · event feeds · simulations · devices"] <-->|"Continuous I/O"| E
 ```
 
-**[Try it](#try-it-without-a-model)** · **[Embed it](#embed-it-in-your-process)** · **[Driver guide](docs/v2.md)** · **[Tests and limits](docs/validation.md)**
+**[Install](#install)** · **[Try it](#try-it-without-a-model)** · **[Embed it](#embed-it-in-your-process)** · **[Driver guide](docs/v2.md)** · **[Tests and limits](docs/validation.md)**
+
+## Install
+
+Requires **Node 24+**. Install the package in your application:
+
+```sh
+npm install nervelet
+```
+
+```js
+import { Bridge, createHandlers } from 'nervelet';
+import { createDemoEnvironment } from 'nervelet/demo';
+```
+
+JavaScript uses ES modules (`.mjs` or `"type": "module"` in your `package.json`). TypeScript declarations are included. The core installs only its JSON Schema validator; install optional integrations when you use them:
+
+| Integration | Additional install |
+| --- | --- |
+| MCP transport or managed Codex driver | `npm install @modelcontextprotocol/sdk@1.30.0` |
+| Managed Claude Code driver | `npm install @anthropic-ai/claude-agent-sdk@0.3.273 @modelcontextprotocol/sdk@1.30.0` |
+| Serial adapter | `npm install serialport@13` |
+
+The CLI is available as `npx nervelet` after local installation. Installed harness instructions use the `nervelet` command directly; for those, also install the CLI with `npm install --global nervelet`. Applications that import the library still need the local dependency.
 
 ## The interesting part is between tool calls
 
@@ -52,38 +75,33 @@ A fast sensor does not require a fast model loop. Replaceable samples coalesce. 
 
 ## Try it without a model
 
-Requires **Node 24+**. Install from source; this package has not been published to npm.
+From the directory where you installed Nervelet:
 
 ```sh
-git clone https://github.com/DanMcInerney/nervelet.git
-cd nervelet
-npm ci
-npm run build
-node dist/cli.js demo
+npx nervelet demo
 ```
 
-In another terminal, from the same checkout:
+In another terminal, from the same directory:
 
 ```sh
-node dist/cli.js step
+npx nervelet step
 ```
 
 You'll get the exact goal, simulated state, dated temperature samples, and startup recovery instructions. Repeat the command to see the environment changing independently. The simulated bench samples every 50 ms; no hardware or inference is involved.
 
 ```sh
-node dist/cli.js shutdown
+npx nervelet shutdown
 ```
 
-To attach a signed-in **Claude Code** session, run this from the checkout:
+To attach a signed-in **Claude Code** session, install the CLI globally and initialize your project:
 
 ```sh
-npm link
-cd examples/demo
+npm install --global nervelet
 nervelet init --harness claude-code
-nervelet serve
+nervelet demo
 ```
 
-Open `claude` in another terminal in that same demo directory, then ask:
+Open `claude` in another terminal in that same project directory, then ask:
 
 > Follow the Nervelet goal. Observe, run the bench commands, and keep checking until the goal is done. Then stop.
 
@@ -91,7 +109,7 @@ The installer adds project instructions and recovery hooks. Native permissions s
 
 ## Embed it in your process
 
-No extra service is required. This example runs from the built checkout using the package's own exports:
+No extra service is required. After `npm install nervelet`, save this as `bench.mjs` and run `node bench.mjs`:
 
 ```js
 import { Bridge } from 'nervelet';
@@ -172,6 +190,15 @@ Native interruption is covered by protocol fixtures; **actual Codex/Claude emerg
 
 Those are measured fixture results, not model-speed or autonomy claims. [Reproduction, measurements, and qualification history](docs/validation.md) include the remaining work: real native interruption, sustained sessions, image understanding, repeated native compaction, and physical hardware. A historical Claude CLI run passed the basic simulated loop; Codex CLI qualification is partial.
 
+To develop from source:
+
+```sh
+git clone https://github.com/DanMcInerney/nervelet.git
+cd nervelet
+npm ci
+npm run build
+```
+
 ```sh
 npm test
 npm run typecheck
@@ -191,4 +218,5 @@ These checks require no inference or hardware. Native smoke tests are separate a
 - [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md) · [Arduino](docs/arduino.md)
 - [DroneRTS](docs/dronerts.md): the canonical application embeds one Bridge per pilot; its game rules stay outside the core. Native qualification remains separate.
 - [Documentation and evidence index](docs/index.md)
+- [Release checks and publishing](docs/publishing.md) · [MIT license](LICENSE)
 - [Development instructions](AGENTS.md) · [Implementation handoff](NEXT-DESIGN.md)

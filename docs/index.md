@@ -2,7 +2,8 @@
 
 Current contracts and setup:
 
-- [README](../README.md): source installation, CLI demo and embedding entrypoint.
+- [README](../README.md): npm installation, CLI demo and embedding entrypoint.
+- [Publishing](publishing.md): release checks, archive verification and npm publication.
 - [Adapter API](api.md) and [v2 embedding/drivers](v2.md): supported APIs, receipt budgets, waits and ownership.
 - [Observation and attention](improvements.md): packing, host submission and optional emergency behavior.
 - [Codex](harnesses/codex.md), [Claude Code](harnesses/claude-code.md) and [serial/Arduino](arduino.md): setup and qualification limits.
