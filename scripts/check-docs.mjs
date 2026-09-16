@@ -6,7 +6,24 @@ let links=0,diagrams=0;const external=[];const errors=[];
 for(const file of files){
   const text=await readFile(file,'utf8');let fence=false,language='',lines=[];
   for(const line of text.split(/\r?\n/)){
-    if(/^```/.test(line)){if(!fence){fence=true;language=line.slice(3).trim();lines=[];}else{if(language==='mermaid'){diagrams++;if(!/^(flowchart|sequenceDiagram|graph)\b/.test(lines.join('\n').trim()))errors.push(`${file}: invalid Mermaid fence header`);}fence=false;}continue;}
+    if(/^```/.test(line)){
+      if(!fence){fence=true;language=line.slice(3).trim();lines=[];}
+      else {
+        if(language==='mermaid'){
+          diagrams++;const diagram=lines.join('\n').trim();
+          if(!/^(flowchart|sequenceDiagram|graph)\b/.test(diagram))errors.push(`${file}: invalid Mermaid fence header`);
+          // Sequence labels use #59; for literal semicolons; bare ones start a new statement.
+          // Keep one statement per line so this lightweight check catches that common parse failure.
+          if(/^sequenceDiagram\b/.test(diagram))for(const entry of lines){
+            if(entry.trimStart().startsWith('%%') || !entry.includes(':'))continue;
+            const label=entry.slice(entry.indexOf(':')+1).replace(/#(?:\d+|[a-z]+);/gi,'');
+            if(label.includes(';'))errors.push(`${file}: bare semicolon in Mermaid sequence label; use a comma or #59;`);
+          }
+        }
+        fence=false;
+      }
+      continue;
+    }
     if(fence){lines.push(line);continue;}
     for(const match of line.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)){
       const href=match[1].replace(/^<|>$/g,'').split('#')[0];if(!href||/^[a-z]+:/i.test(href))continue;
@@ -18,4 +35,4 @@ for(const file of files){
   if(fence)errors.push(`${file}: unclosed code fence`);
 }
 if(errors.length){console.error(errors.join('\n'));process.exitCode=1;}
-else console.log(JSON.stringify({markdownFiles:files.length,localLinks:links,mermaidFences:diagrams,outsideRepositoryReferences:external,check:'Local targets, balanced fences and Mermaid diagram headers; no native rendering.'},null,2));
+else console.log(JSON.stringify({markdownFiles:files.length,localLinks:links,mermaidFences:diagrams,outsideRepositoryReferences:external,check:'Local targets, balanced fences, Mermaid headers and sequence-label semicolons; no full parsing or native rendering.'},null,2));

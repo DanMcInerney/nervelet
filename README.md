@@ -33,17 +33,17 @@ sequenceDiagram
     participant E as Environment
     A->>B: step: start a timed movement
     B->>E: Validate and admit command c1
-    E-->>B: Accepted; job j1
-    B-->>A: Receipt + dated state; j1 running
+    E-->>B: Accepted, job j1
+    B-->>A: Receipt + dated state, j1 running
     par Agent works
         Note over A: Reason, edit files, use native tools
     and Environment continues
-        E->>E: Acquire samples; execute j1
-        E->>E: Finish j1; retain completion event
+        E->>E: Acquire samples and execute j1
+        E->>E: Finish j1 and retain completion event
     end
     A->>B: step: acknowledge previous bundle
     B->>E: Get current state and unread events
-    E-->>B: Latest samples; j1 completed
+    E-->>B: Latest samples, j1 completed
     B-->>A: Exact goal + state + completion event
     Note over B,E: Event remains unread until its bundle is acknowledged
 ```
