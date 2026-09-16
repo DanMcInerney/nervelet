@@ -6,7 +6,7 @@ import { instructions, reminder } from './instructions.ts';
 import { fragmentSize, observationText, textSize } from './presentation.ts';
 import { ChangeSignal } from './changes.ts';
 import { evaluateWait, type LogicalWait } from './waits.ts';
-import { stepSchema } from './schemas.ts';
+import { stepSchema, waitSchemaFor } from './schemas.ts';
 import { commandDigest, immutableResult, resultBytes } from './results.ts';
 import { ProfileGuard } from './profile.ts';
 
@@ -45,6 +45,7 @@ export class Bridge {
   readonly limits: Limits;
   readonly profileText: string;
   private validators = new Map<string, ValidateFunction>();
+  private validateWait:(input:unknown)=>boolean;
   private profileGuard: ProfileGuard;
   private goal: Goal;
   private stopped = false;
@@ -113,9 +114,12 @@ export class Bridge {
       if (!/^[a-z][a-z0-9_]{0,63}$/.test(name)) fail('invalid_config','Invalid command name.');
       this.validators.set(name,ajv.compile(definition.schema));
     }
-    for (const field of Object.values(this.profileGuard.profile.waitFields ?? {})) {
+    for (const [name,field] of Object.entries(this.profileGuard.profile.waitFields ?? {})) {
+      boundedText(name,128,'Wait field identifier');
+      if(field.description!==undefined)boundedText(field.description,512,'Wait field description');
       if (!Number.isFinite(field.maxAgeMs) || field.maxAgeMs <= 0 || (field.path?.length ?? 0) > 8 || field.path?.some(k => ['__proto__','prototype','constructor'].includes(k))) fail('invalid_config','Invalid wait field.');
     }
+    this.validateWait=ajv.compile(waitSchemaFor(this.profileGuard.profile));
     this.profileText = this.renderInstructions().instructions;
     this.goal = structuredClone(options.goalProvider?.get() ?? (typeof goal === 'string' ? { text: goal, version: 1, status: 'active' as const } : goal) ?? { text: '', version: 0, status: 'missing' });
     this.validateGoal(this.goal);
@@ -142,9 +146,9 @@ export class Bridge {
   }
   stats(){return {deliveries:this.deliveries.size,receipts:this.receipts.size,retainedResultBytes:this.retainedResultBytes,unresolved:[...this.receipts.values()].filter(r=>r.result.status==='unknown').length,parked:!!this.pending};}
   renderInstructions(options:InstructionOptions={}):{rule:string;instructions:string} {
-    const config={...this.options.instructions,...options,requireGeneration:!!this.options.attention};
+    const config={...this.options.instructions,...options,requireGeneration:!!this.options.attention || !!(options.requireGeneration ?? this.options.instructions?.requireGeneration)};
     const key=stable(config);let value=this.instructionCache.get(key);
-    if(!value){value={rule:reminder(config),instructions:instructions(this.profileGuard.profile,config)};if(this.instructionCache.size>=8)this.instructionCache.delete(this.instructionCache.keys().next().value!);this.instructionCache.set(key,value);}
+    if(!value){value={rule:reminder(config,this.profileGuard.profile),instructions:instructions(this.profileGuard.profile,config)};if(this.instructionCache.size>=8)this.instructionCache.delete(this.instructionCache.keys().next().value!);this.instructionCache.set(key,value);}
     return {...value};
   }
   get attentionOptions():Readonly<AttentionOptions>|undefined {return this.options.attention ? {...this.options.attention} : undefined;}
@@ -242,7 +246,7 @@ export class Bridge {
   private acknowledge(id?: string): void {
     if (!id) return;
     const delivery = this.deliveries.get(id);
-    if (!delivery) fail('unknown_bundle','Unknown or expired seen ID. Observe again; never replay old commands.');
+    if (!delivery) fail('unknown_bundle','Unknown or expired seen ID. Observe again; never replay old commands.',{path:'/seen'});
     if (delivery.through > this.through) {
       this.environment.acknowledge(delivery.through); this.through = delivery.through;
     }
@@ -352,16 +356,23 @@ export class Bridge {
     finally { this.inStep = false;this.resolveStepIdle?.(); }
   }
   private validateRequest(input: StepRequest, options: StepOptions): void {
-    if (!validateStep(input) || bytes(input)>this.limits.maxRequestBytes) fail('invalid_input','Invalid step request (including waitMs/wait syntax or request byte limit).');
+    if(bytes(input)>this.limits.maxRequestBytes)fail('invalid_input','Step request exceeds the request byte limit.');
+    if (!validateStep(input)) fail('invalid_input','Invalid step request (including waitMs/wait syntax).',{path:validateStep.errors?.[0]?.instancePath});
     if (input.loopRef !== undefined && input.loopRef !== this.loopRef) fail('unauthorized','Request belongs to another loop.');
     if (input.waitMs !== undefined && (input.waitMs > this.limits.maxWaitMs || input.wait !== undefined || input.commands !== undefined)) fail('invalid_input','Legacy waitMs requires a separate bounded wait. Use v2 wait for commands plus wait.');
     if ((input.commands?.length ?? 0)>this.limits.maxBatch || input.commands?.some(c => bytes(c)>this.limits.maxCommandBytes)) fail('capacity','Command batch exceeds capacity.');
     if (input.checkpoint !== undefined && (!this.options.saveCheckpoint || Buffer.byteLength(input.checkpoint)>this.limits.maxCheckpointBytes)) fail('capacity','Checkpoint unavailable or too large.');
     if (input.wait) {
       if (!this.environment.changes) fail('unsupported','Conditional waits require environment change notifications.');
-      if (input.wait.reviewMs === undefined && !this.options.allowIndefiniteWait) fail('invalid_input','Finite reviewMs is required.');
-      if ((input.wait.reviewMs ?? 0)>this.limits.maxReviewMs) fail('invalid_input','Review deadline exceeds capacity.');
-      for (const c of input.wait.until) if ('field' in c && !Object.hasOwn(this.profileGuard.profile.waitFields ?? {},c.field)) fail('invalid_input','Wait field is not permitted.');
+      if (input.wait.reviewMs === undefined && !this.options.allowIndefiniteWait) fail('invalid_input','Finite reviewMs is required.',{path:'/wait/reviewMs'});
+      if ((input.wait.reviewMs ?? 0)>this.limits.maxReviewMs) fail('invalid_input','Review deadline exceeds capacity.',{path:'/wait/reviewMs'});
+      if(!this.validateWait(input.wait)) {
+        // The generic envelope already checked syntax. Only profile field membership differs.
+        const allowed=Object.keys(this.profileGuard.profile.waitFields ?? {}).sort();
+        const index=input.wait.until.findIndex(c=>'field' in c&&!Object.hasOwn(this.profileGuard.profile.waitFields ?? {},c.field));
+        if(index>=0)fail('invalid_wait_field','Use a registered field identifier, not a JSON path.',{path:`/wait/until/${index}/field`,allowed});
+        fail('invalid_input','Invalid wait request.',{path:'/wait'});
+      }
       if (options.waitMode !== 'park' && (input.wait.reviewMs === undefined || input.wait.reviewMs > (options.maxHoldMs ?? this.limits.maxWaitMs))) fail('hold_limit','Wait exceeds attached hold limit; use a managed parking driver.');
     }
   }

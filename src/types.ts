@@ -13,7 +13,7 @@ export interface Profile {
   instructions: string;
   commands: Record<string, CommandDefinition>;
   /** Only these dated numeric inputs may be used by conditional waits. */
-  waitFields?: Record<string, { source: 'state' | 'sample'; sample?: string; path?: string[]; maxAgeMs: number }>;
+  waitFields?: Record<string, { source: 'state' | 'sample'; sample?: string; path?: string[]; maxAgeMs: number; description?: string }>;
   camera?: { policy: 'none' | 'capture_on_step' | 'latest'; maxAgeMs?: number };
 }
 export interface Sample {
@@ -107,6 +107,11 @@ export interface StepRequest {
   schemaVersion?: 2; loopRef?: string; seen?: string; goalVersion?: number; generation?: number;
   waitMs?: number; commands?: Command[]; wait?: WaitRequest; checkpoint?: string;
 }
+/** Names and paths for a host's existing step aliases; does not add capabilities. */
+export interface InstructionBinding {
+  observation?: string; seen?: string; commandId?: string; goalVersion?: string; generation?: string;
+  observe?: string; waitTool?: string; batch?: string; waitUntil?: string; waitReviewMs?: string;
+}
 export interface InstructionOptions {
   transport?: 'cli' | 'tools'; stop?: boolean;
   /** Names of all tools that guarantee an observation refresh. */
@@ -115,6 +120,7 @@ export interface InstructionOptions {
   commandSchemas?: 'inline' | 'transport';
   waitMode?: 'hold' | 'park';
   requireGeneration?: boolean;
+  binding?: InstructionBinding;
 }
 export interface StepOptions {
   waitMode?: 'hold' | 'park'; maxHoldMs?: number; repeatInstructions?: boolean;

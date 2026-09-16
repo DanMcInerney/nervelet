@@ -1,6 +1,6 @@
 import { Ajv } from 'ajv';
 import type { Bridge } from './core.ts';
-import { stepSchema, DIALECT } from './schemas.ts';
+import { stepSchema, waitSchemaFor, waitInstructionsFor, DIALECT } from './schemas.ts';
 import type { Bundle, StepOptions, StepRequest } from './types.ts';
 import { bytes, fail, object } from './util.ts';
 import { observationText } from './presentation.ts';
@@ -28,7 +28,7 @@ export function createHandlers(bridge:Bridge, options:HandlerOptions = {}): Hand
     properties:{id:stepSchema.properties.commands.items.properties.id,kind:{const:kind},args:definition.schema}
   }));
   const tools:ToolDefinition[]=[
-    {name:'step',description:'Acknowledge evidence, admit compatible commands, optionally wait, then observe. End this turn when parked.',inputSchema:{...stepSchema,properties:{...stepSchema.properties,commands:{type:'array',maxItems:commands.length?bridge.limits.maxBatch:0,...(commands.length?{items:{oneOf:commands}}:{})}}}},
+    {name:'step',description:'Acknowledge evidence, admit compatible commands, optionally wait, then observe. '+(options.waitMode==='hold'?'Waits hold the tool call for a bounded time.':'End this turn when parked.')+' '+waitInstructionsFor(bridge.environment.profile),inputSchema:{...stepSchema,properties:{...stepSchema.properties,wait:waitSchemaFor(bridge.environment.profile),commands:{type:'array',maxItems:commands.length?bridge.limits.maxBatch:0,...(commands.length?{items:{oneOf:commands}}:{})}}}},
     {name:'cancel',description:'Request domain job cancellation on the responsive control path.',inputSchema:schema({jobId:{type:'string',minLength:1,maxLength:128}},['jobId'])},
     {name:'describe',description:'Read bounded authoritative profile, command schemas or current status.',inputSchema:schema({topic:{enum:['profile','commands','status']}},['topic'])}
   ];
@@ -37,7 +37,7 @@ export function createHandlers(bridge:Bridge, options:HandlerOptions = {}): Hand
   tools.sort((a,b)=>a.name.localeCompare(b.name));
   // Validate command structure here; Bridge returns individual invalid-argument admissions.
   const ajv=new Ajv({strict:true}), validators=new Map(tools.map(t=>[t.name,ajv.compile(t.name==='step'?stepSchema:t.inputSchema)]));
-  const instructionOptions={...options.instructions,stop:options.stop,requireGeneration:!!bridge.attentionOptions,transport:options.legacy?'cli' as const:'tools' as const,...(options.waitMode ? {waitMode:options.waitMode} : {})};
+  const instructionOptions={...options.instructions,stop:options.stop,requireGeneration:!!bridge.attentionOptions || !!options.instructions?.requireGeneration,transport:options.legacy?'cli' as const:'tools' as const,...(options.waitMode ? {waitMode:options.waitMode} : {})};
   const operatingInstructions=bridge.renderInstructions(instructionOptions).instructions;
   const stepOptions={...options,protocolVersion:options.legacy ? undefined : 2 as const,instructions:options.legacy && !options.instructions ? undefined : instructionOptions,textEncoding:options.textEncoding ?? (options.legacy ? 'json' as const : 'tool-result' as const)};
   return {
@@ -47,7 +47,8 @@ export function createHandlers(bridge:Bridge, options:HandlerOptions = {}): Hand
       if(options.authorize && !options.authorize())fail('unauthorized','Caller is not authorized for this bound loop.');
       const validate=validators.get(name);
       if(!validate)fail('unauthorized','Tool is not exposed to this caller.');
-      if(!object(args) || bytes(args)>bridge.limits.maxRequestBytes || !validate(args))fail('invalid_input','Tool arguments do not match the exposed schema or request byte limit.');
+      if(!object(args) || bytes(args)>bridge.limits.maxRequestBytes)fail('invalid_input','Tool arguments must be an object within the request byte limit.');
+      if(!validate(args))fail('invalid_input','Tool arguments do not match the exposed schema.',{path:validate.errors?.[0]?.instancePath});
       if(args.loopRef !== undefined && args.loopRef !== bridge.loopRef)fail('unauthorized','Forged loop reference.');
       if(name!=='stop' && name!=='cancel')signal?.throwIfAborted();
       switch(name) {
