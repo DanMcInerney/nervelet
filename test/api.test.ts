@@ -38,9 +38,15 @@ test('JSON action rejects extra properties and applies a valid operation through
   await driver.turn(await bridge.step(),signal());assert.equal(bridge.status().loop,'stopped');assert.equal(requests.length,2);assert.ok(requests[0]!.response_format);
 });
 test('history rotates only complete exchanges and supplies authoritative recovery',async t=>{
-  const {bridge,driver,requests}=await setup(t,{maxHistoryBytes:6500},(_body,n)=>n===1?response([call('d','describe',{topic:'profile'})]):response(undefined,'done'));
+  // Size against real generated recovery, leaving room for metadata but not a full description exchange.
+  const sizing=new Bridge(new DemoEnvironment(),'Exact API goal');await sizing.start();t.after(()=>sizing.close());
+  const baseline=[{role:'system',content:createHandlers(sizing,{waitMode:'park'}).instructions},
+    {role:'user',content:JSON.stringify(await sizing.step({schemaVersion:2}))}];
+  const maxHistoryBytes=Buffer.byteLength(JSON.stringify(baseline))+256;
+  const {bridge,driver,requests}=await setup(t,{maxHistoryBytes},(_body,n)=>n===1?response([call('d','describe',{topic:'profile'})]):response(undefined,'done'));
   await driver.turn(await bridge.step({schemaVersion:2}),signal());assert.equal(requests.length,2);
   const second=requests[1]!.messages as Record<string,unknown>[];assert.equal(second.length,2);const recovery=JSON.parse(second[1]!.content as string);assert.equal(recovery.recovery.reason,'api_history_rotation');assert.equal(recovery.goal.text,'Exact API goal');assert.equal(second.some(m=>m.role==='tool'),false);
+  assert.ok(requests.every(request=>Buffer.byteLength(JSON.stringify(request.messages))<=maxHistoryBytes));
 });
 test('unsupported image and changed model fail explicitly without fallback',async t=>{
   const {bridge,driver,requests}=await setup(t,{},()=>({...response(undefined,'done'),model:'substituted'}));

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { Ajv, type ValidateFunction } from 'ajv';
 import { bounded, boundedText, bytes, fail, message, now, stable, withAbort } from './util.ts';
 import type { AttentionEvidence, AttentionOptions, AttentionState, Bundle, Command, ControlOutcome, Environment, Goal, GoalProvider, InstructionOptions, Limits, Receipt, ResultBudget, Snapshot, StepOptions, StepRequest, Trace } from './types.ts';
@@ -55,6 +55,8 @@ export class Bridge {
   private generation = 1;
   private refreshed = 0;
   private recoveryReason = 'startup; prior-process observations and receipts are not retained';
+  // Short opaque delivery IDs keep a fresh 96-bit scope for every Bridge lifetime.
+  private readonly bundleScope = randomBytes(12).toString('base64url');
   private sequence = 0;
   private started = false;
   private persistence: Promise<void> = Promise.resolve();
@@ -549,7 +551,7 @@ export class Bridge {
     const at=now();
     const rendered=this.renderInstructions(options.instructions);
     const bundle: Bundle = {
-      id: `${this.epoch}:b${this.sequence+1}`, epoch:this.epoch, deliveredMs:at,
+      id: `b${this.sequence+1}.${this.bundleScope}`, epoch:this.epoch, deliveredMs:at,
       ...(v2 ? {schemaVersion:2 as const,loopRef:this.loopRef,generation,assembledMs:at} : this.options.attention ? {generation} : {}),
       profile:`${this.profileGuard.profile.id}:${this.profileGuard.profile.version}`, loop:this.status().loop as Bundle['loop'],
       rule:rendered.rule, goal:{...this.goal}, nextCommandId:`c${this.highestCommand+1}`,
