@@ -98,9 +98,9 @@ sequenceDiagram
     participant D as Environment
     A->>B: step: LED + 200 ms movement
     B->>D: Admit LED, then movement
-    D-->>B: completed; accepted job j1
+    D-->>B: completed, accepted job j1
     B-->>A: Receipts, velocity, j1 running
-    Note over A,D: Model reasons; acquisition and j1 continue
+    Note over A,D: Model reasons while acquisition and j1 continue
     D-->>B: j1 completed event
     A->>B: step with previous seen ID
     B-->>A: Latest state and j1 completed

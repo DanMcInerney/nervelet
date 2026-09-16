@@ -37,7 +37,7 @@ sequenceDiagram
     participant B as Bridge
     participant A as Native agent
     D-->>B: Sample and own status every 100 ms
-    B->>D: Startup Stop; await confirmation
+    B->>D: Startup Stop and await confirmation
     A->>B: nervelet step
     B-->>A: Exact contract, goal and dated evidence
     Note over D,A: Sampling and bridge heartbeat continue during inference
