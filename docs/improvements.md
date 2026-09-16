@@ -1,6 +1,6 @@
 # Bounded observation and emergency improvements
 
-Implemented locally from clean baseline `2a806a61b5d9cc2dc48029bb9818bd228c8aba25`. These changes extend the existing Bridge, handlers and supervisor. All emergency evidence is from deterministic fixtures; actual Codex and Claude interruption/resumption remains **unqualified**. No release was published, inference launched, hardware used, or DroneRTS file changed. [Validation](validation.md) records checks and measurements.
+This page documents the observation/attention changes implemented from baseline `2a806a61b5d9cc2dc48029bb9818bd228c8aba25` and their later host-submission extension. [The current v2 contract](v2.md) adds reliable receipt revisions and payload budgets, any-unread-event waiting and checked immutable profiles; [reliability validation](reliability.md) records the new checks. The earlier implementation launched no inference and changed no DroneRTS files. Its emergency evidence remains deterministic; actual Codex and Claude driver interruption/resumption is **unqualified**. DroneRTS's separate [application integration](dronerts.md) has its own evidence and remaining native gates.
 
 ## Limits, receipts and package compatibility
 
@@ -103,7 +103,7 @@ Trace sinks must remain bounded and nonblocking; exceptions cannot change admiss
 
 ## Consuming application responsibilities
 
-The application still owns acquisition, emergency classification, reliable source-event retention, allowed evidence age, command preconditions, permissions, received-goal authority and mission completion. The environment owns physical safeguards, job execution, and whether accepted work continues, brakes or stops. Native hosts own actor isolation and matching tool/result settlement. Resource quotas and deployed dependency/CPU/storage costs require application qualification. DroneRTS integration, private-patch removal, gameplay and acoustic sensing remain separate work.
+The application still owns acquisition, emergency classification, reliable source-event retention, allowed evidence age, command preconditions, permissions, received-goal authority and mission completion. The environment owns physical safeguards, job execution, and whether accepted work continues, brakes or stops. Native hosts own actor isolation and matching tool/result settlement. Resource quotas and deployed dependency/CPU/storage costs require application qualification. DroneRTS now implements its integration and private-patch removal separately; native camera reliability, gameplay qualification and acoustic calibration remain application work.
 # Borrowed-host final submission
 
 An embedding host that formats or transports results after `Bridge.step` must set

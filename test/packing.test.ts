@@ -5,6 +5,7 @@ import { serveLocalMcp } from '../src/transports/mcp.ts';
 import { bytes } from '../src/util.ts';
 import type { Bundle, Command, Receipt, Trace } from '../src/index.ts';
 import { Feed } from './attention-fixture.ts';
+import { waitInstructions } from '../src/schemas.ts';
 import { temp } from './helpers.ts';
 
 test('configurable request/command bytes use exact UTF-8 including escaping and preserve default ceilings',async t=>{
@@ -57,7 +58,8 @@ test('canonical compact instructions apply to reminders and recovery and budget 
   assert.ok(JSON.stringify(h.tools).includes('TRANSPORT_SCHEMA_ONLY'));assert.ok(!h.instructions.includes('Explicit stop ends'));
   b.refresh('fixture');const recovery=await h.call('step',{seen:first.id}) as Bundle;assert.equal(recovery.recovery!.instructions,h.instructions);
   assert.equal(recovery.goal.text,'Exact\ngoal');assert.ok(bytes(toolResult(recovery))<=b.limits.maxRecoveryBytes);
-  const longNames=['"\\λ'.repeat(30)];const constrained=new Bridge(new Feed(),'Goal',{limits:{maxRecoveryBytes:1800}});
+  // Keep the same envelope pressure while accounting for the new canonical wait contract.
+  const longNames=['"\\λ'.repeat(30)];const constrained=new Bridge(new Feed(),'Goal',{limits:{maxRecoveryBytes:1800+bytes(waitInstructions)}});
   await assert.rejects(createHandlers(constrained,{instructions:{refreshTools:longNames}}).call('step',{}),/capacity/);
 });
 

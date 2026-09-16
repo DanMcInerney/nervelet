@@ -1,10 +1,10 @@
 # Validation
 
-**2026-09-16 · observation/attention improvements.** These checks establish only the behavior described here. [Current implementation and limits](improvements.md) · [v0.2 embedding contract](v2.md).
+**Current validation:** [The reliability implementation record](reliability.md) contains the latest test count, package checks and result/profile measurements. [The v2 contract](v2.md) documents current behavior. The dated records below preserve their original source revisions, counts and limitations; they are not validation of later changes. [Documentation and evidence index](index.md).
 
-## Current local checks and measurements
+## Historical observation/attention checks — 2026-09-16
 
-Started with a clean tree at `2a806a61b5d9cc2dc48029bb9818bd228c8aba25`; `npm ci` and the **57-test baseline** passed. The expanded local suite has **89 tests**. Build, `npm test`, `npm run typecheck`, isolated `npm run check:package`, `npm run check:docs`, and `git diff --check` pass on Windows with Node 24.15.0 / npm 11.12.1. This is local evidence; the older CI run below does not validate these changes. Dependencies were not upgraded.
+Started with a clean tree at `2a806a61b5d9cc2dc48029bb9818bd228c8aba25`; `npm ci` and the **57-test baseline** passed. That expanded local suite had **89 tests**. Build, `npm test`, `npm run typecheck`, isolated `npm run check:package`, `npm run check:docs`, and `git diff --check` passed on Windows with Node 24.15.0 / npm 11.12.1. This is historical local evidence; the older CI run below did not validate those changes. Dependencies were not upgraded.
 
 New fixtures cover API-only emergency requests; continuous samples during blocked inference with zero ordinary interruptions; same-goal resumption without overlap; held waits, captures, uncertain admission, asynchronous recovery assembly, natural completion, parked/closing turns; Stop/closure/domain-death/goal-change precedence; generation checks after replacement acknowledgement; rearm/cooldown/interrupt budgets; coalescing and bounded capsules; FIFO backlog acknowledgements; unsupported/failed interruption and termination deadlines. Codex and Claude have separate terminal-correlation fixtures. Large Unicode/escaped commands cross core, handler, IPC and local HTTP MCP paths. Reference packing checks compare included events and exact final JSON/tool-result bytes. Existing tool-pairing, serial, CLI and six-actor isolation fixtures remain in the suite.
 
@@ -93,7 +93,7 @@ The implementation follows the official [Codex App Server](https://learn.chatgpt
 
 The [managed examples](../examples/managed/claude-code.ts) require an explicit model before invoking inference; the [Codex example](../examples/managed/codex.ts) also requires an explicit executable. Qualify each chosen provider/model, auth mode, permissions and OS in a separately bounded run. The library never substitutes an API/local model for a native session.
 
-Further gaps: physical serial hardware; long-duration memory/transport soak; source-specific image freshness and decoding; provider-specific JSON constraints; crash-durable events/receipts; application-owned artifact and routine capabilities; and actual DroneRTS gameplay migration with its existing dependency/quota/isolation tests. Optional sequence helpers, persisted core store, engineer and Python device adapter are not implemented or enabled.
+Further library gaps remain physical serial hardware; long-duration memory/transport soak; source-specific image freshness and decoding; provider-specific JSON constraints; crash-durable events/receipts; and application-owned artifact and routine capabilities. DroneRTS has since implemented its [embedded application integration](dronerts.md), with separately recorded dependency/quota/isolation tests and unresolved native qualification. Optional sequence helpers, persisted core store, engineer and Python device adapter are not implemented or enabled.
 
 ## Historical v0.1 evidence
 
@@ -162,4 +162,4 @@ The script records bounded native logs and summaries in ignored `.runtime/`. The
 
 ## Deferred at the v0.1 baseline
 
-V0.2 now implements typed image transport and the embedding fixtures; their native/hardware qualification remains separate. Native repeated-compaction qualification, complete Codex qualification, physical Arduino testing, process-crash durability and actual DroneRTS integration are still outstanding. Deterministic fixtures and a basic historical native loop do not establish robot autonomy or hardware readiness.
+At this historical baseline, typed image transport, embedding and actual DroneRTS integration were deferred. V0.2 and the later application integration implement those surfaces; their native/hardware qualification remains separate. Native repeated-compaction qualification, complete Codex driver qualification, physical Arduino testing and process-crash durability remain outstanding. Deterministic fixtures and a basic historical native loop do not establish robot autonomy or hardware readiness.

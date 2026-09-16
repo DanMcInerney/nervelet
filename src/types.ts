@@ -44,6 +44,14 @@ export interface Receipt {
   status: 'accepted' | 'completed' | 'rejected' | 'not_executed' | 'unknown';
   jobId?: string;
   reason?: string;
+  /** Historical operation output, retained until this exact receipt revision is seen. */
+  data?: Json;
+}
+export interface ResultBudget {
+  /** Maximum resultBytes(data), reserved before invoking execute. */
+  retainedBytes: number;
+  /** Maximum escaped JSON receipt fragment (including scalar receipt metadata). */
+  serializedBytes: number;
 }
 export interface Snapshot {
   state?: Sample;
@@ -78,6 +86,11 @@ export interface Environment {
   /** Events/jobs/faults wake a wait. Streaming samples alone may coalesce. */
   wait(signal: AbortSignal): Promise<void>;
   execute(command: Command, context: CommandContext): Promise<Receipt>;
+  /** Pure synchronous preflight. Omission permits scalar receipts only. */
+  resultBudget?(command: Command): ResultBudget;
+  /** Drop executor-owned result storage after terminal acknowledgement or history eviction.
+   * Must be synchronous, idempotent and non-throwing; never cancels or replays effects. */
+  releaseReceipt?(command: CommandIdentity): void;
   cancel(id: string, signal: AbortSignal): Promise<void | ControlOutcome>;
   stop(signal: AbortSignal): Promise<void | ControlOutcome>;
   /** Authoritative reconciliation only; never implement by re-executing. */
@@ -86,7 +99,7 @@ export interface Environment {
   reconcileReceipt?(command: CommandIdentity, signal: AbortSignal): Promise<Receipt>;
   close(): Promise<void>;
 }
-export type WaitCondition = { kind: 'event'; type: string } | { kind: 'jobTerminal'; id: string } |
+export type WaitCondition = { kind: 'anyEvent' } | { kind: 'event'; type: string } | { kind: 'jobTerminal'; id: string } |
   { kind: 'threshold'; field: string; op: 'gt' | 'gte' | 'lt' | 'lte'; value: number } |
   { kind: 'change'; field: string; deadband: number };
 export interface WaitRequest { until: WaitCondition[]; reviewMs?: number }
@@ -161,6 +174,9 @@ export interface Config {
   limits?: Partial<Limits>;
 }
 export interface Limits {
+  maxResultBytes: number;
+  maxRetainedResultBytes: number;
+  maxResultDeliveryBytes: number;
   maxRequestBytes: number;
   maxCommandBytes: number;
   maxBundleBytes: number;

@@ -134,7 +134,7 @@ Use the optional `Supervisor` when you need a bounded owner for continuation and
 | Problem | Contract |
 | --- | --- |
 | The agent loses context | Repeat the exact goal and compact current state. Recovery adds canonical instructions, active job arguments, and an optional workspace note. Commands wait for recovery acknowledgement. |
-| A response gets lost | Redeliver unread events with stable IDs. `seen` acknowledges only events included in that bundle. |
+| A response gets lost | Redeliver unread events and retained v2 command results with stable identities. `seen` acknowledges only included events and the result revisions actually delivered. |
 | A command times out | Retain an uncertain receipt. Reconcile against executor-owned records; never silently replay the effect. |
 | Observations get old | Keep acquisition, receipt, and delivery times distinct. Report invalid or missing evidence explicitly. |
 | The world is noisy | Bound queues, receipts, payloads, waits, and execution records. Report backpressure instead of silently dropping reliable events. |
@@ -166,7 +166,7 @@ Native interruption is covered by protocol fixtures; **actual Codex/Claude emerg
 
 ## Small enough to inspect
 
-- **89 deterministic tests** cover the bridge, CLI, serial protocol, MCP, drivers, recovery, interruption races, and six isolated simulated actors.
+- **Deterministic regression tests** cover the bridge, CLI, serial protocol, MCP, drivers, recovery, receipt/payload retention, waits and six isolated simulated actors. [Current reliability validation](docs/reliability.md) records the actual run count and measurements.
 - **About 1.67 MB / six packages** for an isolated core-only installation, excluding Node and optional integrations.
 - **64 event encodes instead of 2,080 repeated event visits** in the candidate-packing phase of a 64-event fixture. The final output is still verified; FIFO and acknowledgement semantics stay the same.
 
@@ -189,5 +189,6 @@ These checks require no inference or hardware. Native smoke tests are separate a
 - [Environment adapter API](docs/api.md)
 - [Original design and its tradeoffs](DESIGN.md)
 - [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md) · [Arduino](docs/arduino.md)
-- [DroneRTS](docs/dronerts.md): the canonical application; its game rules stay outside the core. Gameplay migration is separate work.
+- [DroneRTS](docs/dronerts.md): the canonical application embeds one Bridge per pilot; its game rules stay outside the core. Native qualification remains separate.
+- [Documentation and evidence index](docs/index.md)
 - [Development instructions](AGENTS.md) · [Implementation handoff](NEXT-DESIGN.md)
