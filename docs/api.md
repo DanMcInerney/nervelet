@@ -32,17 +32,21 @@ Write an exact objective in `goal.txt`, then run `nervelet serve`. Node 24 loads
 
 | Member | Contract |
 | --- | --- |
-| `profile` | Immutable ID/version, concise instructions/units and JSON Schema command definitions. |
+| `profile` | Canonical ID/version, concise instructions/units and JSON Schema command definitions; changes fail closed. Use `immutableProfile` for a checked immutable copy and cheap later identity checks. |
 | `start(signal)` | Open source and start continuous acquisition. Reconcile prior device work. |
 | `snapshot(after, signal)` | Current complete compact state, samples, jobs and events after the acknowledged sequence. |
 | `acknowledge(through)` | Consume only events through this sequence. |
 | `wait(signal)` | Resolve on relevant event/job/fault; abort promptly. |
 | `execute(command, context)` | Validate domain authority/freshness/resource ownership and return admission promptly. |
+| `resultBudget(command)` | Optional pure synchronous reservation for retained `Receipt.data` and escaped result delivery bytes, checked before execution. Omission permits scalar receipts only. |
+| `releaseReceipt(identity)` | Optional synchronous, idempotent, non-throwing release of executor-owned result storage after resolved acknowledgement or history eviction. Never cancel or replay effects here. |
 | `cancel(id, signal)` | Cancel through the domain job owner; keep terminal outcomes intact. |
 | `stop(signal)` | Apply the domain's Stop policy, including old-goal work. |
 | `close()` | Release streams, timers and owned resources. |
 
 `context` provides `signal`, `goalVersion` and bridge `epoch`. Profiles are canonical: their schemas validate arguments and their text explains behavior. Changing a profile requires restart. Core has no required robot field; commands can be empty for an API monitor.
+
+`Receipt.data?: Json` holds original operation output, separately from current state and samples. Use `immutableResult` to establish one deeply frozen JSON payload shared by the executor and Bridge; `resultBytes` charges retained data and `resultDeliveryBytes` measures its escaped tool-result fragment. Reserve worst-case bounds before effects, including changes possible during asynchronous admission. The host separately accounts for profiles, receipt/execution metadata, retained command arguments and transient serialization. See [result delivery and budgets](v2.md#protocol-and-delivery).
 
 `ObservationStore` optionally implements bounded latest-sample/event storage, acknowledgement and wait notifications. Populate it with `setState`, `setSample` and `push`. `push` returns false on backpressure; the adapter must pause/fault its producer. Do not silently drop reliable events. Store snapshots are copies; event sequences increase and do not reset within a bridge epoch.
 
@@ -88,6 +92,8 @@ Original exports remain: `nervelet`, `nervelet/demo`, `nervelet/serial`, `nervel
 | Commands per batch | 8 |
 | Wait / adapter operation / startup | 30 s / 2 s / 10 s |
 | Retained receipts / delivery mappings | 128 / 32 |
+| One result payload / total retained result payloads | 16 KiB / 128 KiB |
+| Escaped serialized result fragment | 16 KiB |
 | Own state / latest samples | 4 KiB / 8 KiB, up to 64 samples |
 | Unread events / one event | 256 and 64 KiB / 2 KiB |
 | Recovery workspace note | 4 KiB |

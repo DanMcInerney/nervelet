@@ -1,5 +1,6 @@
 export { Bridge, DEFAULT_LIMITS, RULE } from './core.ts';
 export { ObservationStore } from './store.ts';
+export { commandDigest, immutableResult, resultBytes, resultDeliveryBytes } from './results.ts';
 export { NerveletError } from './util.ts';
 export { serve, request } from './ipc.ts';
 export { createHandlers, toolResult } from './handlers.ts';
@@ -10,6 +11,7 @@ export type { AttentionTurn } from './attention.ts';
 export type * from './supervisor.ts';
 export { ChangeSignal } from './changes.ts';
 export { instructions } from './instructions.ts';
+export { immutableProfile } from './profile.ts';
 export { stepSchema, waitSchema, DIALECT } from './schemas.ts';
 export type { BridgeOptions } from './core.ts';
 export type * from './types.ts';
