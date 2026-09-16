@@ -5,7 +5,7 @@ import { resolve, join } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { Bridge } from './core.ts';
 import { createHandlers } from './handlers.ts';
-import { atomicWrite, fail, message, NerveletError, object, readBounded, optionalText } from './util.ts';
+import { atomicWrite, fail, message, NerveletError, object, readBounded, optionalText, serializeError } from './util.ts';
 import type { StepRequest } from './types.ts';
 
 export interface RpcRequest { method: 'step'|'cancel'|'stop'|'status'|'goal'|'refresh'|'instructions'|'shutdown'|'tools'|'tool'; params?: unknown }
@@ -90,7 +90,7 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
           const output=JSON.stringify({ok:true,result})+'\n';
           if(Buffer.byteLength(output)>maxResponseBytes)fail('capacity','IPC response exceeds capacity.');
           socket.end(output,()=>{if(object(result)&&typeof result.id==='string')bridge.emit({type:'submission',id:result.id,reason:'ipc_written'});if(rpc.method==='shutdown')void close();});
-        } catch(error) {socket.end(JSON.stringify({ok:false,error:{code:error instanceof NerveletError?error.code:'operation_failed',message:message(error).slice(0,1024)}})+'\n');}
+        } catch(error) {socket.end(JSON.stringify({ok:false,error:serializeError(error)})+'\n');}
       })();
     });
   });
@@ -137,7 +137,7 @@ export async function request<T=unknown>(rpc:RpcRequest,options:{cwd?:string;sig
       const index=input.indexOf(10);if(index<0)return;
       try {
         const data=JSON.parse(input.subarray(0,index).toString('utf8'));
-        if(data.ok)finish(undefined,data.result as T);else finish(new NerveletError(data.error?.code??'operation_failed',data.error?.message??'Bridge error.'));
+        if(data.ok)finish(undefined,data.result as T);else finish(new NerveletError(data.error?.code??'operation_failed',data.error?.message??'Bridge error.',data.error ?? {}));
       } catch(error){finish(error);}
     });
   });

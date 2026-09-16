@@ -2,7 +2,7 @@ import { Ajv } from 'ajv';
 import type { AgentDriver, DriverCapabilities, DriverContext, Usage } from '../supervisor.ts';
 import type { Bundle } from '../types.ts';
 import { toolResult, type ToolContent } from '../handlers.ts';
-import { bounded, boundedText, bytes, fail, message, object } from '../util.ts';
+import { bounded, boundedText, bytes, fail, message, object, serializeError } from '../util.ts';
 
 export interface ChatMessage { role:string; content?:unknown; [key:string]:unknown }
 export interface ApiOptions {
@@ -105,12 +105,12 @@ export class ApiDriver implements AgentDriver {
         }
         invalid=0;this.history.push(decoded.assistant);
         if(decoded.action) {
-          let result:unknown;try{result=await this.context.handlers.call(decoded.action.op,decoded.action.args,combined);}catch(error){result={error:message(error)};}
+          let result:unknown;try{result=await this.context.handlers.call(decoded.action.op,decoded.action.args,combined);}catch(error){result={error:serializeError(error)};}
           this.history.push({role:'user',content:this.content(toolResult(result).content)});
         } else if(decoded.calls.length) {
           const results=await Promise.all(decoded.calls.map(async call=>{
             try{return toolResult(await this.context!.handlers.call(call.function.name,JSON.parse(call.function.arguments),combined));}
-            catch(error){return {isError:true,content:[{type:'text' as const,text:JSON.stringify({error:message(error)})}]};}
+            catch(error){return {isError:true,content:[{type:'text' as const,text:JSON.stringify({error:serializeError(error)})}]};}
           }));
           const images:ToolContent[]=[];
           // Append every paired tool result before any following multimodal observation.

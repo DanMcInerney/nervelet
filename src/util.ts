@@ -2,11 +2,37 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, writeFile, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-export class NerveletError extends Error {
-  code: string;
-  constructor(code: string, message: string) { super(message); this.code = code; }
+export interface ErrorDetails { path?: string; allowed?: readonly string[] }
+export interface SerializedError extends ErrorDetails { code: string; message: string }
+function clip(value: string, limit: number): string {
+  let result=value.slice(0,limit);
+  while(Buffer.byteLength(result)>limit)result=result.slice(0,-1);
+  return result.replace(/[\uD800-\uDBFF]$/u,'');
 }
-export function fail(code: string, message: string): never { throw new NerveletError(code, message); }
+function correctiveDetails(details:ErrorDetails):ErrorDetails {
+  return {
+    ...(typeof details.path==='string' ? {path:clip(details.path,256)} : {}),
+    ...(Array.isArray(details.allowed) ? {allowed:details.allowed.filter((v):v is string=>typeof v==='string'&&Buffer.byteLength(v)<=128).slice(0,16)} : {})
+  };
+}
+export class NerveletError extends Error {
+  code: string; readonly path?:string; readonly allowed?:readonly string[];
+  constructor(code: string, message: string, details:ErrorDetails={}) {
+    super(message);this.code=code;Object.assign(this,correctiveDetails(details));
+  }
+}
+/** Bound corrections once for every transport. Errors never imply execution certainty. */
+export function serializeError(error:unknown):SerializedError {
+  const code=object(error)&&typeof error.code==='string' ? error.code : 'operation_failed';
+  const result:SerializedError={code:clip(code,128),message:clip(message(error),1024),...(error instanceof NerveletError ? correctiveDetails(error) : {})};
+  // JSON escaping can expand bounded strings. Keep the complete error within 4 KiB.
+  while(bytes(result)>4096) {
+    if(result.allowed?.length)result.allowed=result.allowed.slice(0,-1);
+    else result.message=result.message.slice(0,Math.floor(result.message.length/2));
+  }
+  return result;
+}
+export function fail(code: string, message: string, details?:ErrorDetails): never { throw new NerveletError(code, message,details); }
 export const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 export const now = () => Math.round(performance.now());
 export const message = (error: unknown) => error instanceof Error ? error.message : String(error);

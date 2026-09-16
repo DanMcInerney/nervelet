@@ -30,7 +30,7 @@ test('v2 no-goal startup and host-owned received goal version',async t=>{
 });
 test('complete request validation precedes effects; commands plus fast event wait',async t=>{
   const {bridge,env,first}=await setup(t);
-  await assert.rejects(bridge.step({schemaVersion:2,seen:first.id,goalVersion:1,commands:[{id:'c1',kind:'publish',args:{}}],wait:{until:[{kind:'threshold',field:'secret',op:'gt',value:1}],reviewMs:1000}}),/permitted/);
+  await assert.rejects(bridge.step({schemaVersion:2,seen:first.id,goalVersion:1,commands:[{id:'c1',kind:'publish',args:{}}],wait:{until:[{kind:'threshold',field:'secret',op:'gt',value:1}],reviewMs:1000}}),{code:'invalid_wait_field',path:'/wait/until/0/field',allowed:['queue']});
   assert.equal(env.effects,0);
   const b=await bridge.step({schemaVersion:2,goalVersion:1,commands:[{id:'c1',kind:'publish',args:{}}],wait:{until:[{kind:'event',type:'published'}],reviewMs:600000}},undefined,{waitMode:'park'});
   assert.equal(b.wait?.status,'ready');assert.equal(b.wait?.reason,'event');assert.equal(env.effects,1);

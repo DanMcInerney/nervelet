@@ -2,13 +2,13 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toolResult, type Handlers, type ToolResult } from '../handlers.ts';
-import { fail, message } from '../util.ts';
+import { fail, serializeError } from '../util.ts';
 
 /** Use this dispatcher from an existing authenticated host server; no extra service needed. */
 export function mcpTools(handlers:Handlers) {
   return {list:()=>structuredClone(handlers.tools),async call(name:string,args:unknown,signal?:AbortSignal):Promise<ToolResult> {
     try{const value=await handlers.call(name,args,signal);const result=toolResult(value);handlers.submitted?.(value);return result;}
-    catch(error){return {isError:true,content:[{type:'text',text:JSON.stringify({error:{code:(error as {code?:string}).code ?? 'operation_failed',message:message(error).slice(0,1024)}})}]};}
+    catch(error){return {isError:true,content:[{type:'text',text:JSON.stringify({error:serializeError(error)})}]};}
   }};
 }
 export async function createMcpServer(handlers:Handlers):Promise<McpServer> {
