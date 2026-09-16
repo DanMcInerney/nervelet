@@ -200,7 +200,7 @@ export class Bridge {
     this.attentionArmed=true;
   }
   beginAttentionInterrupt(id:string):void {
-    if(this.stopped || this.attentionState?.id!==id || this.attentionState.status!=='pending')fail('inactive','Attention transition no longer current.');
+    if(this.stopped || this.attentionState?.id!==id || !['pending','ready'].includes(this.attentionState.status))fail('inactive','Attention transition no longer current.');
     if(this.attentionState.interrupted)return;
     if(now()-this.attentionEvidence!.receivedMs>this.options.attention!.maxEvidenceAgeMs)fail('stale_attention','Evidence expired before native interruption; it remains historical environment data.');
     if(this.attentionInterrupts>=this.options.attention!.maxInterrupts)fail('attention_budget','Attention interrupt budget exhausted.');

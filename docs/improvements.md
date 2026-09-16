@@ -120,3 +120,6 @@ returns `restart` after terminal/tool settlement. Hosts must submit open results
 independently of settlement: awaiting the helper inside that result deadlocks.
 Hosts without this option retain the legacy assembly-based boundary contract.
 This is protocol-tested, not native interruption qualification.
+Reconciliation can invalidate an assembled recovery generation; settlement then
+joins the native turn before requesting fresh replacement input, within the same
+termination and interruption budgets.

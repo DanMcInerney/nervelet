@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Bridge, settleEmergency } from '../src/index.ts';
+import { Bridge, settleEmergency, type Environment } from '../src/index.ts';
 import { attention, deferred, evidence, Feed } from './attention-fixture.ts';
 
 async function fixture() {
@@ -65,4 +65,23 @@ test('Stop wins over waiting for host submission',async()=>{
   const work=settleEmergency(bridge,{ended:deferred().promise});
   await bridge.stop();bridge.confirmSubmission(bundle.id);
   assert.equal(await work,'inactive');await bridge.close();
+});
+
+test('reconciliation invalidates a submitted older recovery and joins before replacement',async()=>{
+  const feed=new Feed(), entered=deferred(), release=deferred();
+  feed.execute=async command=>{entered.resolve();await release.promise;return {id:command.id,status:'completed'};};
+  (feed as Environment).reconcileReceipt=async identity=>({id:identity.id,status:'completed'});
+  const bridge=new Bridge(feed,'same goal',{attention,submission:'host',retainCommandArguments:false});await bridge.start();
+  const first=await bridge.step({schemaVersion:2});bridge.confirmSubmission(first.id);
+  const active=await bridge.step({schemaVersion:2,seen:first.id});
+  const step=bridge.step({schemaVersion:2,seen:active.id,goalVersion:1,generation:active.generation,commands:[{id:'c1',kind:'publish',args:{}}]});
+  await entered.promise;bridge.requestAttention(evidence());
+  const ended=deferred();let interrupts=0;
+  const work=settleEmergency(bridge,{ended:ended.promise,interrupt:async()=>{interrupts++;ended.resolve();}});
+  const bundle=await step;bridge.confirmSubmission(bundle.id);release.resolve();
+  assert.equal(await work,'restart');assert.equal(interrupts,1);
+  assert.equal(bridge.stats().unresolved,0);assert.equal(bridge.attention()!.delivered,false);
+  const fresh=await bridge.step({schemaVersion:2});bridge.confirmSubmission(fresh.id);
+  assert.equal(bridge.attention()!.delivered,true);assert.equal(fresh.goal.text,'same goal');
+  await bridge.close();
 });

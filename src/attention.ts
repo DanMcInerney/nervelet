@@ -26,9 +26,9 @@ export function settleEmergency(bridge:Bridge, turn?:AttentionTurn):Promise<'bou
       await bounded(signal=>bridge.whenAttentionSubmitted(attention.id,signal),remaining());
       if(!current())return 'inactive' as const;
       let route:'boundary'|'restart'='boundary';
-      let ended=false;
-      if(turn) {void turn.ended.then(()=>{ended=true;},()=>{ended=true;});await Promise.resolve();}
-      if(turn && (ended || !bridge.attention()!.delivered)) {
+      const join=async()=>{
+        if(!turn)return;
+        let ended=false;void turn.ended.then(()=>{ended=true;},()=>{ended=true;});await Promise.resolve();
         if(!ended) {
           if(!turn.interrupt)fail('unsupported_interrupt','This binding cannot interrupt and confirm matching native termination.');
           bridge.beginAttentionInterrupt(attention.id);
@@ -39,9 +39,16 @@ export function settleEmergency(bridge:Bridge, turn?:AttentionTurn):Promise<'bou
         await bounded(()=>turn.ended,remaining());
         bridge.emit({type:'turn_ended',turnId:turn.turnId,attentionId:attention.id,reason:'authorized_attention'});
         route='restart';
-      }
+      };
+      let ended=false;
+      if(turn) {void turn.ended.then(()=>{ended=true;},()=>{ended=true;});await Promise.resolve();}
+      if(turn && (ended || !bridge.attention()!.delivered))await join();
       if(!current())return 'inactive' as const;
       await bounded(s=>bridge.settleAttention(attention.id,s),remaining());
+      // Reconciliation may advance recovery generation. An already submitted
+      // old-generation result cannot establish the fresh open boundary.
+      if(!current())return 'inactive' as const;
+      if(route==='boundary' && turn && !bridge.attention()!.delivered)await join();
       return route;
     } catch(error) {bridge.failAttention(attention.id,error);throw error;}
   })();
