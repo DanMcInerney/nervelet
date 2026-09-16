@@ -12,7 +12,7 @@ Requires Node 24+. Install the library in your application:
 npm install nervelet
 ```
 
-Use `npx nervelet` for the locally installed CLI. Native harness hooks invoke `nervelet` directly, so also use `npm install --global nervelet` for that path. A global CLI alone does not make package imports resolve in another project. For local library development, build the checkout and use `npm install /absolute/path/to/nervelet` instead.
+Use `npx nervelet` for the locally installed CLI. Installed harness instructions use `nervelet` directly, so also use `npm install --global nervelet` for that path. A global CLI alone does not make package imports resolve in another project. For local library development, build the checkout and use `npm install /absolute/path/to/nervelet` instead.
 
 `nervelet.config.ts`:
 

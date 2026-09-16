@@ -41,7 +41,7 @@ JavaScript uses ES modules (`.mjs` or `"type": "module"` in your `package.json`)
 | Managed Claude Code driver | `npm install @anthropic-ai/claude-agent-sdk@0.3.273 @modelcontextprotocol/sdk@1.30.0` |
 | Serial adapter | `npm install serialport@13` |
 
-The CLI is available as `npx nervelet` after local installation. Native harness hooks use the `nervelet` command directly; for those, also install the CLI with `npm install --global nervelet`. Applications that import the library still need the local dependency.
+The CLI is available as `npx nervelet` after local installation. Installed harness instructions use the `nervelet` command directly; for those, also install the CLI with `npm install --global nervelet`. Applications that import the library still need the local dependency.
 
 ## The interesting part is between tool calls
 
