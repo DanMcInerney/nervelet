@@ -14,12 +14,15 @@ export const DEFAULT_LIMITS: Limits = {
   maxBatch: 8, maxWaitMs: 30000, operationMs: 2000, startupMs: 10000, receiptHistory: 128, bundleHistory: 32,
   maxRecoveryBytes: 32768, maxMediaBytes: 4194304, maxImages: 4, maxCheckpointBytes: 1024, maxReviewMs: 86400000, maxJobs: 128
 };
-type Delivery = { through: number; generation: number; goalVersion: number; resultIds:string[]; attentionId?:string };
+type Delivery = { through: number; generation: number; goalVersion: number; resultIds:string[]; attentionId?:string; submitted?:boolean };
 const validateStep = new Ajv({ strict: true }).compile<StepRequest>(stepSchema);
 export interface BridgeOptions {
   retainCommandArguments?: boolean;
   /** Trusted host attention only; omitted disables all emergency transitions. */
   attention?: AttentionOptions;
+  /** Borrowed hosts confirm final output, after their formatting/transport work.
+   * Assembly is never sufficient for attention's open-boundary route in this mode. */
+  submission?: 'host';
   instructions?: InstructionOptions;
   limits?: Partial<Limits>; note?: () => Promise<string | undefined>; saveGoal?: (goal: Goal) => Promise<void>;
   saveCheckpoint?: (text: string) => Promise<void>; goalProvider?: GoalProvider;
@@ -136,6 +139,36 @@ export class Bridge {
   }
   get attentionOptions():Readonly<AttentionOptions>|undefined {return this.options.attention ? {...this.options.attention} : undefined;}
   attention():AttentionState|undefined {return this.attentionState ? {...this.attentionState} : undefined;}
+  /** Final host submission, not model acknowledgement or completed action. */
+  confirmSubmission(id:string):void {
+    const delivery=this.deliveries.get(id);
+    if(!delivery)fail('unknown_bundle','Cannot submit an unknown or expired bundle.');
+    if(delivery.submitted)return;
+    delivery.submitted=true;
+    if(this.attentionState && delivery.attentionId===this.attentionState.id && delivery.generation===this.generation &&
+       delivery.goalVersion===this.goal.version && ['pending','ready'].includes(this.attentionState.status))this.attentionState.delivered=true;
+    this.emit({type:'submission',id,generation:delivery.generation,attentionId:delivery.attentionId});
+    this.changes.notify();
+  }
+  /** Failed final formatting/output keeps evidence and gates effects; never acknowledges mail. */
+  failSubmission(id:string,error:unknown):void {
+    const delivery=this.deliveries.get(id);
+    if(delivery?.attentionId && !delivery.submitted && delivery.generation===this.generation && delivery.attentionId===this.attentionState?.id)
+      this.failAttention(delivery.attentionId!,error);
+  }
+  /** Only waits when a current capsule was assembled for host submission.
+   * The host must submit independently, never await settleEmergency inside that output. */
+  async whenAttentionSubmitted(id:string,signal:AbortSignal):Promise<void> {
+    if(this.options.submission!=='host')return;
+    while(!this.stopped && this.attentionState?.id===id) {
+      signal.throwIfAborted();
+      const sequence=this.changes.sequence;
+      if(this.attentionState.status==='fault')fail('fault',this.fault ?? 'Attention submission failed.');
+      if(this.attentionState.delivered)return;
+      if(![...this.deliveries.values()].some(d=>d.attentionId===id && d.generation===this.generation && d.goalVersion===this.goal.version))return;
+      await this.changes.wait(sequence,signal);
+    }
+  }
   /** Host-only. The application retains reliable source events and owns physical response policy. */
   requestAttention(evidence:AttentionEvidence):AttentionState {
     const config=this.options.attention;
@@ -167,7 +200,7 @@ export class Bridge {
     this.attentionArmed=true;
   }
   beginAttentionInterrupt(id:string):void {
-    if(this.stopped || this.attentionState?.id!==id || this.attentionState.status!=='pending')fail('inactive','Attention transition no longer current.');
+    if(this.stopped || this.attentionState?.id!==id || !['pending','ready'].includes(this.attentionState.status))fail('inactive','Attention transition no longer current.');
     if(this.attentionState.interrupted)return;
     if(now()-this.attentionEvidence!.receivedMs>this.options.attention!.maxEvidenceAgeMs)fail('stale_attention','Evidence expired before native interruption; it remains historical environment data.');
     if(this.attentionInterrupts>=this.options.attention!.maxInterrupts)fail('attention_budget','Attention interrupt budget exhausted.');
@@ -185,7 +218,7 @@ export class Bridge {
     this.changes.notify();
   }
   failAttention(id:string,error:unknown):void {
-    if(this.stopped || this.attentionState?.id!==id)return;
+    if(this.stopped || !this.attentionState || this.attentionState.id!==id)return;
     this.attentionState.status='fault';this.fault=`attention_fault: ${message(error).slice(0,256)}`;
     this.operations.abort(new Error(this.fault));this.changes.notify();
   }
@@ -452,7 +485,7 @@ export class Bridge {
     if (deliver) {
       this.sequence++;
       this.deliveries.set(bundle.id,{through,generation,goalVersion,resultIds:results.map(r=>r.id),...(bundle.attention ? {attentionId:bundle.attention.id} : {})});
-      if(bundle.attention)this.attentionState!.delivered=true;
+      if(bundle.attention && this.options.submission!=='host')this.attentionState!.delivered=true;
       this.deliveredThrough=Math.max(this.deliveredThrough,through);
       while(this.deliveries.size > this.limits.bundleHistory) this.deliveries.delete(this.deliveries.keys().next().value!);
       const inputs=[...(snapshot.state ? [['state',snapshot.state] as const] : []),...Object.entries(snapshot.samples ?? {})].map(([name,s])=>({name,receivedMs:s.receivedMs,acquired:s.acquired,valid:s.valid}));
