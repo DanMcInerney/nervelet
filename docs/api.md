@@ -38,7 +38,7 @@ Write an exact objective in `goal.txt`, then run `nervelet serve`. Node 24 loads
 | `acknowledge(through)` | Consume only events through this sequence. |
 | `wait(signal)` | Resolve on relevant event/job/fault; abort promptly. |
 | `execute(command, context)` | Validate domain authority/freshness/resource ownership and return admission promptly. |
-| `resultBudget(command)` | Optional pure synchronous reservation for retained `Receipt.data` and escaped result delivery bytes, checked before execution. Omission permits scalar receipts only. |
+| `resultBudget(command)` | Optional pure synchronous reservation for retained `Receipt.data` and escaped result delivery bytes, checked before execution. Omission permits scalar receipts only, reserving 2,048 escaped bytes for reliable v2 admission. |
 | `releaseReceipt(identity)` | Optional synchronous, idempotent, non-throwing release of executor-owned result storage after resolved acknowledgement or history eviction. Never cancel or replay effects here. |
 | `cancel(id, signal)` | Cancel through the domain job owner; keep terminal outcomes intact. |
 | `stop(signal)` | Apply the domain's Stop policy, including old-goal work. |

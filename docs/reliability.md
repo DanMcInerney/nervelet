@@ -24,6 +24,11 @@ executor share one frozen payload; acknowledging its resolved current revision
 releases it through `releaseReceipt`, preserving scalar deduplication. The tests
 cover failed output, changed/conflicting IDs, original-execution reconciliation,
 maximum-size escaped output, bounded mappings and result pages under pressure.
+The independent review found two further edge cases, now covered by five added
+regressions: stale concurrent reconciliation cannot alter an evicted or newer
+receipt, its byte charge or recovery generation; scalar-only results reserve
+2,048 escaped delivery bytes before reliable admission. Explicit smaller scalar
+bounds remain available, and pure legacy preflight remains compatible.
 Recovery can be delivered before a result page that needs its own byte budget.
 Adapters must provide truthful bounds and keep mandatory state within their
 declared output budget; an adapter violating those contracts faults explicitly.
@@ -37,7 +42,7 @@ profile used for schemas, resources, instructions and numeric wait fields.
 
 ## Validation
 
-On Windows x64, Node **24.15.0**: `npm ci`, `npm test` (**124/124**),
+On Windows x64, Node **24.15.0**: `npm ci`, `npm test` (**129/129**),
 `npm run typecheck`, `npm run check:docs`, `npm run check:package`, and
 `git diff --check` passed. The package check built and installed the archive into
 an isolated consumer, exercised its exports, and confirmed optional peers were

@@ -19,6 +19,10 @@ export const DEFAULT_LIMITS: Limits = {
 };
 type Delivery = { through: number; generation: number; goalVersion: number; results: { id: string; revision: number }[]; attentionId?:string; submitted?:boolean };
 type StoredReceipt = { digest: string; result: Receipt; kind: string; command?: Command; acknowledged: boolean; revision: number; budget: ResultBudget; retainedBytes: number };
+const MAX_SCALAR_RECEIPT_BYTES = 1024;
+// JSON text can double again when placed inside a tool-result string (quotes
+// and backslashes). This bound also covers escaped control characters.
+const MAX_SCALAR_DELIVERY_BYTES = 2 * MAX_SCALAR_RECEIPT_BYTES;
 const validateStep = new Ajv({ strict: true }).compile<StepRequest>(stepSchema);
 export interface BridgeOptions {
   retainCommandArguments?: boolean;
@@ -394,12 +398,11 @@ export class Bridge {
       ...(result.jobId === undefined ? {} : { jobId: result.jobId }),
       ...(result.reason === undefined ? {} : { reason: result.reason }) };
     if (result.id !== id || !['accepted','completed','rejected','not_executed','unknown'].includes(result.status) ||
-        (result.jobId !== undefined && typeof result.jobId !== 'string') || (result.reason !== undefined && typeof result.reason !== 'string') || bytes(scalar) > 1024) {
+        (result.jobId !== undefined && typeof result.jobId !== 'string') || (result.reason !== undefined && typeof result.reason !== 'string') || bytes(scalar) > MAX_SCALAR_RECEIPT_BYTES) {
       fail('invalid_adapter', 'Invalid adapter receipt.');
     }
-    if (data === undefined) return { ...scalar };
-    if (resultBytes(data) > budget.retainedBytes) fail('invalid_adapter', 'Adapter result exceeds its retained-byte reservation.');
-    const owned = { ...scalar, data: immutableResult(data) };
+    if (data !== undefined && resultBytes(data) > budget.retainedBytes) fail('invalid_adapter', 'Adapter result exceeds its retained-byte reservation.');
+    const owned = data === undefined ? scalar : { ...scalar, data: immutableResult(data) };
     if (fragmentSize(JSON.stringify(owned), { textEncoding: 'tool-result' }) > budget.serializedBytes) {
       fail('invalid_adapter', 'Adapter result exceeds its serialized-byte reservation.');
     }
@@ -411,12 +414,14 @@ export class Bridge {
     const digest = commandDigest(command);
     const validate = this.validators.get(command.kind);
     const valid = !!validate && validate(command.args);
-    const budget = valid ? this.environment.resultBudget?.(command) ?? { retainedBytes: 0, serializedBytes: 0 } : { retainedBytes: 0, serializedBytes: 0 };
+    const declaredBudget = valid ? this.environment.resultBudget?.(command) : undefined;
+    const budget = declaredBudget ?? { retainedBytes: 0, serializedBytes: MAX_SCALAR_DELIVERY_BYTES };
     if (!Number.isSafeInteger(budget.retainedBytes) || budget.retainedBytes < 0 || !Number.isSafeInteger(budget.serializedBytes) || budget.serializedBytes < 0) {
       fail('invalid_adapter', 'Result reservations must be nonnegative safe integer byte bounds.');
     }
+    const reserveDelivery = this.reliableResults || declaredBudget !== undefined;
     if (budget.retainedBytes > this.limits.maxResultBytes || budget.retainedBytes > this.limits.maxRetainedResultBytes ||
-        budget.serializedBytes > this.limits.maxResultDeliveryBytes || budget.serializedBytes > resultCapacity) {
+        (reserveDelivery && (budget.serializedBytes > this.limits.maxResultDeliveryBytes || budget.serializedBytes > resultCapacity))) {
       return { id: command.id, status: 'not_executed', reason: 'result_backpressure' };
     }
     if (!this.reserveReceipt(budget)) return { id: command.id, status: 'not_executed', reason: 'receipt_backpressure' };
@@ -457,11 +462,19 @@ export class Bridge {
   async reconcile(id:string,signal?:AbortSignal): Promise<Receipt> {
     const stored=this.receipts.get(id);
     if (!stored || stored.result.status !== 'unknown') fail('unsupported','No unresolved receipt is available.');
+    const revision = stored.revision;
     const reconcile=this.environment.reconcileReceipt
       ? (s:AbortSignal)=>this.environment.reconcileReceipt!({id,kind:stored.kind,digest:stored.digest},s)
       : stored.command && this.environment.reconcile ? (s:AbortSignal)=>this.environment.reconcile!(structuredClone(stored.command!),s) : undefined;
     if(!reconcile)fail('unsupported','Authoritative reconciliation requires retained arguments or reconcileReceipt; the unresolved receipt is retained.');
-    const result=this.ownReceipt(await bounded(reconcile,this.limits.operationMs,signal), id, stored.budget);
+    const received = await bounded(reconcile,this.limits.operationMs,signal);
+    // Other reconciliation calls, seen acknowledgements and admissions can run
+    // while the authoritative lookup awaits. Never update an orphan or superseded
+    // revision, including its reservation or recovery generation.
+    if (this.receipts.get(id) !== stored || stored.revision !== revision || stored.result.status !== 'unknown') {
+      fail('stale_reconciliation', 'Receipt changed while reconciliation was pending; observe the current result.');
+    }
+    const result=this.ownReceipt(received, id, stored.budget);
     // An acknowledgement delivered before reconciliation cannot acknowledge this revision.
     stored.revision++;
     stored.result=result;

@@ -5,7 +5,7 @@ import { DemoEnvironment } from '../src/adapters/demo.ts';
 import { commandDigest, immutableResult, resultBytes, resultDeliveryBytes } from '../src/results.ts';
 import { createHash } from 'node:crypto';
 import { stable } from '../src/util.ts';
-import type { Command, CommandIdentity, Json, Receipt, ResultBudget } from '../src/types.ts';
+import type { Command, CommandIdentity, Environment, Json, Receipt, ResultBudget } from '../src/types.ts';
 
 class Receipts extends DemoEnvironment {
   effects = 0;
@@ -279,4 +279,139 @@ test('shared identity preserves digest and result ownership rejects non-JSON mut
   assert.throws(() => immutableResult(new Proxy({}, { getPrototypeOf() { throw new Error('proxy trap called'); } })), /proxies/);
   assert.throws(() => immutableResult([, 1] as Json[]), /sparse/);
   assert.throws(() => immutableResult({ value: Infinity }), /finite/);
+});
+
+class ConcurrentReconciliation extends Payloads {
+  completions: ((result: Receipt) => void)[] = [];
+  override async execute(command: Command): Promise<Receipt> {
+    const completed = await super.execute(command);
+    return command.id === 'c1' ? { id: command.id, status: 'unknown' } : completed;
+  }
+  override reconcile(): Promise<Receipt> {
+    return new Promise(resolve => { this.completions.push(resolve); });
+  }
+}
+
+test('out-of-order reconciliation cannot revive an acknowledged and evicted receipt or charge its payload again', async t => {
+  const env = new ConcurrentReconciliation(); env.value = { content: 'x'.repeat(500) };
+  const retainedBytes = resultBytes(env.value);
+  const { bridge } = await payloadSetup(t, env, { limits: { receiptHistory: 1, maxRetainedResultBytes: retainedBytes } });
+  const unknown = await bridge.step({ schemaVersion: 2, goalVersion: 1, commands: [command('c1')] });
+  const earlier = bridge.reconcile('c1');
+  const rejected = assert.rejects(earlier, (error: { code: string }) => error.code === 'stale_reconciliation');
+  const later = bridge.reconcile('c1');
+  const completed = env.records.get('c1')!;
+  env.completions[1]!(completed);
+  await later;
+  const revised = await bridge.step({ schemaVersion: 2, seen: unknown.id });
+  assert.equal(revised.results?.[0]?.status, 'completed');
+  assert.ok(revised.recovery);
+  const next = await bridge.step({ schemaVersion: 2, seen: revised.id, goalVersion: 1, commands: [command('c2')] });
+  assert.equal(next.results?.[0]?.id, 'c2');
+  const generation = bridge.status().generation;
+  assert.equal(bridge.stats().retainedResultBytes, retainedBytes);
+  env.completions[0]!(completed);
+  await rejected;
+  assert.equal(bridge.stats().retainedResultBytes, retainedBytes);
+  assert.equal(bridge.stats().receipts, 1);
+  assert.equal(bridge.status().generation, generation);
+  const current = await bridge.step({ schemaVersion: 2 });
+  assert.equal(current.results?.[0]?.id, 'c2');
+  assert.equal(current.recovery, undefined);
+  assert.equal(env.effects, 2);
+});
+
+test('reconciliation also rejects a superseded unknown revision without resetting its acknowledgement', async t => {
+  const env = new ConcurrentReconciliation();
+  const { bridge } = await payloadSetup(t, env);
+  const first = await bridge.step({ schemaVersion: 2, goalVersion: 1, commands: [command('c1')] });
+  const earlier = bridge.reconcile('c1');
+  const rejected = assert.rejects(earlier, (error: { code: string }) => error.code === 'stale_reconciliation');
+  const later = bridge.reconcile('c1');
+  env.completions[1]!({ id: 'c1', status: 'unknown', reason: 'newer authoritative lookup' });
+  await later;
+  bridge.refresh('new recovery');
+  const revised = await bridge.step({ schemaVersion: 2, seen: first.id });
+  assert.equal(revised.results?.[0]?.reason, 'newer authoritative lookup');
+  assert.ok(revised.recovery);
+  await bridge.step({ schemaVersion: 2, seen: revised.id });
+  const reserved = bridge.stats().retainedResultBytes;
+  const generation = bridge.status().generation;
+  env.completions[0]!({ id: 'c1', status: 'unknown', reason: 'stale lookup' });
+  await rejected;
+  assert.equal(bridge.stats().unresolved, 1);
+  assert.equal(bridge.stats().retainedResultBytes, reserved);
+  assert.equal(bridge.status().generation, generation);
+  assert.equal((await bridge.step({ schemaVersion: 2 })).results, undefined);
+});
+
+function scalarEnvironment(reason: string): Environment & { effects: number; reason: string } {
+  return {
+    effects: 0, reason,
+    profile: { id: 'scalar', version: '1', instructions: '', commands: { sample: { description: 'One operation.', schema: { type: 'object' } } } },
+    async start() {}, async snapshot() { return { events: [], hasMore: false }; }, acknowledge() {}, async wait() {},
+    async execute(command) { this.effects++; return { id: command.id, status: 'completed', reason: this.reason }; },
+    async cancel() {}, async stop() {}, async close() {}
+  };
+}
+
+test('default scalar reservation prevents an undeliverable effect without consuming its ID', async t => {
+  const env = scalarEnvironment('x'.repeat(950));
+  const bridge = new Bridge(env, 'Goal', { limits: { maxBundleBytes: 1024 } });
+  await bridge.start(); t.after(() => bridge.close());
+  const first = await bridge.step({ schemaVersion: 2 });
+  const denied = await bridge.step({ schemaVersion: 2, seen: first.id, goalVersion: 1, commands: [command('c1')] });
+  assert.equal(denied.results?.[0]?.reason, 'result_backpressure');
+  assert.equal(denied.nextCommandId, 'c1');
+  assert.equal(env.effects, 0);
+  assert.equal(bridge.stats().receipts, 0);
+  assert.equal((await bridge.step({ schemaVersion: 2 })).results, undefined);
+  // An adapter that promises a genuinely smaller scalar result can use this cap.
+  env.reason = 'bounded';
+  env.resultBudget = () => ({ retainedBytes: 0, serializedBytes: 128 });
+  const allowed = await bridge.step({ schemaVersion: 2, goalVersion: 1, commands: [command('c1')] });
+  assert.equal(allowed.results?.[0]?.status, 'completed');
+  assert.equal(env.effects, 1);
+  assert.deepEqual((await bridge.step({ schemaVersion: 2 })).results, allowed.results);
+  assert.equal((await bridge.step({ schemaVersion: 2, seen: allowed.id })).results, undefined);
+});
+
+test('scalar defaults cover escaped control characters and text envelopes while legacy preflight stays compatible', async t => {
+  const env = scalarEnvironment('small legacy receipt');
+  // Startup instructions fit; a host envelope later leaves only 1,096 bytes.
+  const legacy = new Bridge(env, 'Goal', { limits: { maxBundleBytes: 4096 } });
+  await legacy.start(); t.after(() => legacy.close());
+  const start = await legacy.step();
+  assert.equal((await legacy.step({ seen: start.id, goalVersion: 1, commands: [command('c1')] }, undefined, { wrapperBytes: 3000 })).results?.[0]?.status, 'completed');
+  await legacy.step({ schemaVersion: 2 });
+  assert.equal((await legacy.step({ goalVersion: 1, commands: [command('c2')] }, undefined, { wrapperBytes: 3000 })).results?.find(r => r.id === 'c2')?.reason, 'result_backpressure');
+  assert.equal(env.effects, 1);
+
+  for (const reason of ['\\'.repeat(480), '\0'.repeat(158), '"'.repeat(480)]) {
+    const escaped = scalarEnvironment(reason);
+    const roomy = new Bridge(escaped, 'Goal', { limits: { maxBundleBytes: 3000 } });
+    await roomy.start(); t.after(() => roomy.close());
+    const initial = await roomy.step({ schemaVersion: 2 });
+    const done = await roomy.step({ schemaVersion: 2, seen: initial.id, goalVersion: 1, commands: [command('c1')] }, undefined, { textEncoding: 'tool-result' });
+    assert.equal(done.results?.[0]?.reason, reason);
+    assert.equal(escaped.effects, 1);
+    assert.ok(Buffer.byteLength(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(done) }] })) <= 3000);
+    assert.equal((await roomy.step({ schemaVersion: 2, seen: done.id })).results, undefined);
+  }
+});
+
+test('explicit serialized reservations are enforced for scalar and data receipts alike', async t => {
+  for (const data of [undefined, { value: 'historical' }]) {
+    const env = scalarEnvironment('a scalar result larger than its false reservation');
+    env.resultBudget = () => ({ retainedBytes: data ? resultBytes(data) : 0, serializedBytes: 1 });
+    env.execute = async command => { env.effects++; return { id: command.id, status: 'completed', reason: env.reason, ...(data ? { data } : {}) }; };
+    const bridge = new Bridge(env, 'Goal');
+    await bridge.start(); t.after(() => bridge.close());
+    const first = await bridge.step({ schemaVersion: 2 });
+    const result = await bridge.step({ schemaVersion: 2, seen: first.id, goalVersion: 1, commands: [command('c1')] });
+    assert.equal(result.results?.[0]?.status, 'unknown');
+    assert.match(result.results?.[0]?.reason ?? '', /serialized-byte reservation/);
+    assert.equal(bridge.stats().unresolved, 1);
+    assert.equal(env.effects, 1);
+  }
 });
