@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Bridge } from '../src/core.ts';
 import { ObservationStore } from '../src/store.ts';
 import { instructions } from '../src/instructions.ts';
-import type { Environment, WaitCondition } from '../src/types.ts';
+import type { Environment, Job, WaitCondition } from '../src/types.ts';
 
 function environment(withChanges = true) {
   const store = new ObservationStore();
@@ -44,6 +44,23 @@ test('anyEvent includes delivered but unread events and stops matching only afte
   const pending = bridge.parked()!.ready;
   store.push('another_kind', 'new');
   assert.equal(await pending, 'event');
+});
+
+test('jobTerminal waits for the selected job and preserves each actual ending for inspection',async t=>{
+  const {bridge,env,store}=await setup(t);
+  const job:Job={id:'actual-job',commandId:'c1',kind:'fixture',args:{},status:'running',startedMs:0,updatedMs:0};
+  env.snapshot=async after=>store.snapshot(after,[job,{...job,id:'other-job',status:'completed'}]);
+  for(const status of ['completed','blocked','cancelled','failed'] as const) {
+    job.status='running';
+    const first=await bridge.step({schemaVersion:2});
+    const waiting=await park(bridge,[{kind:'jobTerminal',id:job.id}],10000,first.id);
+    assert.equal(waiting.wait?.status,'parked');
+    const ready=bridge.parked()!.ready;
+    job.status=status;job.updatedMs++;store.wake();
+    assert.equal(await ready,'jobTerminal');
+    const result=await bridge.step({schemaVersion:2,seen:waiting.id});
+    assert.equal(result.jobs?.find(current=>current.id===job.id)?.status,status);
+  }
 });
 
 test('typed events retain delivered-floor semantics and star remains a literal event kind', async t => {

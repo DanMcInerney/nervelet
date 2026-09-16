@@ -87,19 +87,70 @@ test('generated binding wording matches startup, recovery, reminders and identit
   const options:InstructionOptions={binding,requireGeneration:true,refreshTools:['observe','wait','exchange'],waitMode:'hold',commandSchemas:'transport',stop:false};
   const bridge=new Bridge(env,'Inspect',{instructions:options});await bridge.start();t.after(()=>bridge.close());
   const first=await bridge.step({schemaVersion:2});
-  assert.match(first.rule,/Copy nervelet.id exactly into seen/);
+  assert.match(first.rule,/Copy the last received nervelet.id exactly into seen, including on observe and wait/);
   assert.match(first.rule,/nervelet.nextCommandId as command_id, nervelet.goal.version as mission, and nervelet.generation as generation/);
   assert.match(first.rule,/nervelet.results\[\].data separately from current state\/jobs/);
   assert.match(first.rule,/Numeric wait fields: altitude, cargo/);
   assert.equal(first.recovery!.instructions,instructions(env.profile,options));
   assert.match(first.recovery!.instructions,/jobTerminal includes completed, blocked, cancelled and failed/);
   assert.match(first.recovery!.instructions,/Only explicitly acknowledged included events and delivered result revisions are consumed/);
-  assert.match(first.recovery!.instructions,/error-only response is not a fresh observation/);
+  assert.match(first.recovery!.instructions,/error-only response supplies no new bundle ID, fresh observation/);
+  assert.match(first.recovery!.instructions,/seen is rejected as unknown\/expired, observe without seen/);
   assert.match(first.recovery!.instructions,/Use wait with until.*timeout_ms/);
+  assert.match(first.recovery!.instructions,/Prefer it when only checking job completion; inspect returned status/);
+  assert.match(first.recovery!.instructions,/Use observe whenever new evidence is needed/);
   assert.doesNotMatch(first.recovery!.instructions,/When parked|Explicit stop ends/);
-  assert.equal(identityInstructions(options,false),'Copy nervelet.id exactly into seen.');
+  assert.equal(identityInstructions(options,false),'Copy the last received nervelet.id exactly into seen, including on observe and wait.');
   bridge.refresh('fixture-recovery');const recovered=await bridge.step({schemaVersion:2});
   assert.equal(recovered.rule,first.rule);assert.equal(recovered.recovery!.instructions,first.recovery!.instructions);
+});
+
+test('default and custom aliases keep acknowledgement and completion guidance in the host vocabulary',()=>{
+  const profile=new InterfaceEnvironment().profile;
+  const defaults=instructions(profile);
+  assert.match(defaults,/Copy the last received id exactly into seen, including on step\./);
+  assert.match(defaults,/Use step with wait.until.*wait.reviewMs/);
+  assert.doesNotMatch(defaults,/including on step and step/);
+  const custom=instructions(profile,{binding:{observation:'input',seen:'receipt',observe:'look',waitTool:'await_job',waitUntil:'conditions',waitReviewMs:'deadline_ms'}});
+  assert.match(custom,/Copy the last received input.id exactly into receipt, including on look and await_job/);
+  assert.match(custom,/receipt is rejected as unknown\/expired, look without receipt/);
+  assert.match(custom,/Use await_job with conditions.*deadline_ms/);
+  assert.match(custom,/Use look whenever new evidence is needed/);
+  assert.doesNotMatch(custom,/Copy .* into seen|Use wait with until|Use observe whenever/);
+});
+
+test('compact bundle IDs remain distinct across peers and restarts; only exact seen consumes included events',async t=>{
+  const start=async()=>{
+    const env=new InterfaceEnvironment(),bridge=new Bridge(env,'Inspect');
+    await bridge.start();t.after(()=>bridge.close());env.store.push('mail','first');
+    return {env,bridge,first:await bridge.step({schemaVersion:2})};
+  };
+  const owner=await start(),peer=await start();
+  for(const {bridge,first} of [owner,peer]) {
+    assert.ok(first.id.length<=24);
+    assert.match(first.id,/^[A-Za-z0-9_.-]+$/);
+    assert.equal(first.epoch,bridge.epoch);
+    assert.equal(first.events?.[0]?.id,`${bridge.epoch}:e1`);
+    assert.equal(first.loopRef,`interface:${bridge.epoch}`);
+  }
+  assert.notEqual(owner.first.id,peer.first.id);
+  await assert.rejects(owner.bridge.step({schemaVersion:2,seen:peer.first.id}),{code:'unknown_bundle'});
+  await assert.rejects(owner.bridge.step({schemaVersion:2,seen:owner.first.id.slice(1)}),{code:'unknown_bundle'});
+  assert.equal(owner.env.store.stats().events,1);
+  const repeated=await owner.bridge.step({schemaVersion:2});
+  assert.notEqual(repeated.id,owner.first.id);
+  assert.equal(repeated.events?.[0]?.id,owner.first.events?.[0]?.id);
+  assert.equal(repeated.events?.[0]?.redelivered,true);
+  owner.env.store.push('mail','later');
+  const after=await owner.bridge.step({schemaVersion:2,seen:owner.first.id});
+  assert.deepEqual(after.events?.map(event=>event.data),['later']);
+  await owner.bridge.close();
+  const restarted=await start();
+  assert.notEqual(restarted.first.id,owner.first.id);
+  assert.notEqual(restarted.first.epoch,owner.first.epoch);
+  await assert.rejects(restarted.bridge.step({schemaVersion:2,seen:owner.first.id}),{code:'unknown_bundle'});
+  assert.equal(restarted.env.store.stats().events,1);
+  assert.equal((await restarted.bridge.step({schemaVersion:2,seen:restarted.first.id})).events,undefined);
 });
 
 for(const encoding of ['tools','json-action'] as const)test(`${encoding} API errors preserve the shared corrective shape`,async t=>{

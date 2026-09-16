@@ -7,7 +7,7 @@ const waitConditions = [
     type: 'object', additionalProperties: false, required: ['kind'], properties: { kind: { const: 'anyEvent' } } },
   { description: 'event matches its literal type after the delivered event floor; "*" is a literal type, not a wildcard.',
     type: 'object', additionalProperties: false, required: ['kind','type'], properties: { kind: { const: 'event' }, type: text } },
-  { description: 'jobTerminal includes completed, blocked, cancelled and failed endings, not only success.',
+  { description: 'jobTerminal includes completed, blocked, cancelled and failed endings, not only success. Prefer it when only checking job completion; inspect returned status.',
     type: 'object', additionalProperties: false, required: ['kind','id'], properties: { kind: { const: 'jobTerminal' }, id: text } },
   { description: 'threshold compares a valid, fresh numeric profile field using gt, gte, lt or lte.',
     type: 'object', additionalProperties: false, required: ['kind','field','op','value'], properties: { kind: { const: 'threshold' }, field: text, op: { enum: ['gt','gte','lt','lte'] }, value: { type: 'number' } } },
