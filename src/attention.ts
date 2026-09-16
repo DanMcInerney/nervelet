@@ -23,11 +23,12 @@ export function settleEmergency(bridge:Bridge, turn?:AttentionTurn):Promise<'bou
     try {
       // A held wait, command or capture may deliver the capsule through its open result.
       if(bridge.stepInFlight)await bounded(()=>bridge.whenIdle(),remaining());
+      await bounded(signal=>bridge.whenAttentionSubmitted(attention.id,signal),remaining());
       if(!current())return 'inactive' as const;
       let route:'boundary'|'restart'='boundary';
-      if(turn && !bridge.attention()!.delivered) {
-        let ended=false;void turn.ended.then(()=>{ended=true;},()=>{ended=true;});
-        await Promise.resolve();
+      let ended=false;
+      if(turn) {void turn.ended.then(()=>{ended=true;},()=>{ended=true;});await Promise.resolve();}
+      if(turn && (ended || !bridge.attention()!.delivered)) {
         if(!ended) {
           if(!turn.interrupt)fail('unsupported_interrupt','This binding cannot interrupt and confirm matching native termination.');
           bridge.beginAttentionInterrupt(attention.id);

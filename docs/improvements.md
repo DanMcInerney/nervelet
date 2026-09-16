@@ -104,3 +104,19 @@ Trace sinks must remain bounded and nonblocking; exceptions cannot change admiss
 ## Consuming application responsibilities
 
 The application still owns acquisition, emergency classification, reliable source-event retention, allowed evidence age, command preconditions, permissions, received-goal authority and mission completion. The environment owns physical safeguards, job execution, and whether accepted work continues, brakes or stops. Native hosts own actor isolation and matching tool/result settlement. Resource quotas and deployed dependency/CPU/storage costs require application qualification. DroneRTS integration, private-patch removal, gameplay and acoustic sensing remain separate work.
+# Borrowed-host final submission
+
+An embedding host that formats or transports results after `Bridge.step` must set
+`BridgeOptions.submission: 'host'`. Call `confirmSubmission(bundle.id)` only after
+the final result is successfully submitted, or `failSubmission(bundle.id, error)`
+if formatting or transport fails. These methods never acknowledge events. The
+model still echoes `seen`; command completion still comes from the executor.
+
+`settleEmergency` waits within its existing termination budget for a current
+assembled capsule's host confirmation. Missing or failed output faults the
+transition and retains evidence. Stale-generation confirmations cannot authorize
+a boundary. If the native turn naturally ends while output settles, the helper
+returns `restart` after terminal/tool settlement. Hosts must submit open results
+independently of settlement: awaiting the helper inside that result deadlocks.
+Hosts without this option retain the legacy assembly-based boundary contract.
+This is protocol-tested, not native interruption qualification.
