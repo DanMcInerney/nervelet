@@ -38,6 +38,7 @@ export interface Job {
   reason?: string;
 }
 export interface Command { id: string; kind: string; args: RecordData }
+export interface CommandIdentity { id: string; kind: string; digest: string }
 export interface Receipt {
   id: string;
   status: 'accepted' | 'completed' | 'rejected' | 'not_executed' | 'unknown';
@@ -53,7 +54,7 @@ export interface Snapshot {
   fault?: string;
 }
 export interface CommandContext {
-  signal: AbortSignal; goalVersion: number; epoch: string;
+  signal: AbortSignal; goalVersion: number; epoch: string; generation?: number;
   /** Call immediately before each effect, after asynchronous preconditions. */
   assertCurrent?(): void;
 }
@@ -81,6 +82,8 @@ export interface Environment {
   stop(signal: AbortSignal): Promise<void | ControlOutcome>;
   /** Authoritative reconciliation only; never implement by re-executing. */
   reconcile?(command: Command, signal: AbortSignal): Promise<Receipt>;
+  /** Reconcile by executor-owned identity when retained arguments are disabled. Never replay. */
+  reconcileReceipt?(command: CommandIdentity, signal: AbortSignal): Promise<Receipt>;
   close(): Promise<void>;
 }
 export type WaitCondition = { kind: 'event'; type: string } | { kind: 'jobTerminal'; id: string } |
@@ -88,10 +91,28 @@ export type WaitCondition = { kind: 'event'; type: string } | { kind: 'jobTermin
   { kind: 'change'; field: string; deadband: number };
 export interface WaitRequest { until: WaitCondition[]; reviewMs?: number }
 export interface StepRequest {
-  schemaVersion?: 2; loopRef?: string; seen?: string; goalVersion?: number;
+  schemaVersion?: 2; loopRef?: string; seen?: string; goalVersion?: number; generation?: number;
   waitMs?: number; commands?: Command[]; wait?: WaitRequest; checkpoint?: string;
 }
-export interface StepOptions { waitMode?: 'hold' | 'park'; maxHoldMs?: number; repeatInstructions?: boolean }
+export interface InstructionOptions {
+  transport?: 'cli' | 'tools'; stop?: boolean;
+  /** Names of all tools that guarantee an observation refresh. */
+  refreshTools?: string[];
+  /** Host guarantees the catalog remains available, including after context recovery. */
+  commandSchemas?: 'inline' | 'transport';
+  waitMode?: 'hold' | 'park';
+  requireGeneration?: boolean;
+}
+export interface StepOptions {
+  waitMode?: 'hold' | 'park'; maxHoldMs?: number; repeatInstructions?: boolean;
+  instructions?: InstructionOptions;
+  /** Charge JSON text escaping and the standard tool-result envelope when selected. */
+  textEncoding?: 'json' | 'tool-result'; wrapperBytes?: number;
+  /** Trusted per-turn binding for hosts; never derive it from mutable current state. */
+  effectGeneration?: number;
+  /** Select the v2 response without adding bytes to a caller's request. */
+  protocolVersion?: 2;
+}
 export interface Goal { text: string; version: number; status: 'active' | 'stopped' | 'missing' }
 export interface GoalProvider { get(): Goal | undefined; subscribe?(listener: (goal: Goal) => void): () => void }
 export interface Bundle {
@@ -119,12 +140,29 @@ export interface Bundle {
   media?: { status: 'missing'; reason: string };
   wait?: { status: 'parked' | 'ready'; token: string; reason?: string; deadlineMs?: number };
   control?: ControlOutcome;
+  /** Bounded duplicate of host-authorized evidence; does not acknowledge its source events. */
+  attention?: AttentionEvidence & { id:string; generation:number };
+}
+export interface AttentionEvidence {
+  episode:string; receivedMs:number; acquired?:{clock:string;ms:number}; data:Json;
+  /** References to reliable environment events. Those events stay in the ordinary FIFO. */
+  eventIds?:string[];
+}
+export interface AttentionOptions {
+  maxTransitions:number; maxInterrupts:number; cooldownMs:number;
+  terminationMs:number; maxEvidenceAgeMs:number; maxEvidenceBytes?:number;
+}
+export interface AttentionState {
+  id:string; generation:number; status:'pending'|'ready'|'acknowledged'|'fault';
+  delivered:boolean; interrupted:boolean; coalesced:number;
 }
 export interface Config {
   environment: () => Environment | Promise<Environment>;
   limits?: Partial<Limits>;
 }
 export interface Limits {
+  maxRequestBytes: number;
+  maxCommandBytes: number;
   maxBundleBytes: number;
   maxGoalBytes: number;
   maxProfileBytes: number;
@@ -142,8 +180,11 @@ export interface Limits {
   maxJobs: number;
 }
 export interface Trace {
-  type: 'assembly' | 'acknowledgement' | 'admission' | 'completion' | 'wait' | 'wake' | 'control' | 'submission';
+  type: 'assembly' | 'acknowledgement' | 'admission' | 'completion' | 'wait' | 'wake' | 'control' | 'submission' | 'attention_requested' | 'attention_coalesced' | 'interrupt_requested' | 'turn_ended' | 'replacement_submitted';
   loopRef: string; atMs: number; id?: string; reason?: string; textBytes?: number; mediaBytes?: number;
   turnId?:string; commandId?:string; completedMs?:number;
   inputs?:{name:string;receivedMs:number;acquired?:{clock:string;ms:number};valid:boolean}[];
+  generation?:number; attentionId?:string;
+  assemblyMs?:number; eventSerializations?:number; serializedBytes?:number; snapshotCount?:number;
+  receivedMs?:number; acquired?:{clock:string;ms:number};
 }

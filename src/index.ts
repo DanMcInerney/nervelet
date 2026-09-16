@@ -5,6 +5,8 @@ export { serve, request } from './ipc.ts';
 export { createHandlers, toolResult } from './handlers.ts';
 export type * from './handlers.ts';
 export { Supervisor } from './supervisor.ts';
+export { settleEmergency } from './attention.ts';
+export type { AttentionTurn } from './attention.ts';
 export type * from './supervisor.ts';
 export { ChangeSignal } from './changes.ts';
 export { instructions } from './instructions.ts';

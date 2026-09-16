@@ -9,7 +9,7 @@ import { atomicWrite, fail, message, NerveletError, object, readBounded, optiona
 import type { StepRequest } from './types.ts';
 
 export interface RpcRequest { method: 'step'|'cancel'|'stop'|'status'|'goal'|'refresh'|'instructions'|'shutdown'|'tools'|'tool'; params?: unknown }
-interface Address { endpoint: string; token: string; epoch: string; pid: number }
+interface Address { endpoint: string; token: string; epoch: string; pid: number; maxRequestBytes?:number; maxResponseBytes?:number }
 const addressFile = (cwd:string) => join(cwd,'.nervelet','bridge.json');
 async function endpoint(cwd:string):Promise<string> {
   const hash=createHash('sha256').update(userInfo().username+'\0'+await realpath(cwd)).digest('hex').slice(0,24);
@@ -40,6 +40,8 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
     }
   }
   const token=randomBytes(32).toString('hex');
+  const maxRequestBytes=Math.max(65536,bridge.limits.maxRequestBytes+4096);
+  const maxResponseBytes=Math.max(1048576,bridge.limits.maxRecoveryBytes*2+4096,bridge.limits.maxBundleBytes*2+4096);
   const handlers=createHandlers(bridge,{legacy:true});
   const nativeHandlers=createHandlers(bridge);
   const sockets=new Set<Socket>();
@@ -61,7 +63,7 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
     socket.on('data',chunk=>{
       if(handled)return;
       input=Buffer.concat([input,chunk]);
-      if(input.length>65536){handled=true;socket.end(JSON.stringify({ok:false,error:{code:'capacity',message:'IPC request exceeds capacity.'}})+'\n');return;}
+      if(input.length>maxRequestBytes){handled=true;socket.end(JSON.stringify({ok:false,error:{code:'capacity',message:'IPC request exceeds capacity.'}})+'\n');return;}
       const index=input.indexOf(10);if(index<0)return;handled=true;
       void (async()=>{
         try {
@@ -70,7 +72,7 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
           const params=rpc.params;
           let result:unknown;
           switch(rpc.method) {
-            case 'tools':result={tools:nativeHandlers.tools,instructions:nativeHandlers.instructions,loopRef:nativeHandlers.loopRef};break;
+            case 'tools':result={tools:nativeHandlers.tools,instructions:nativeHandlers.instructions,loopRef:nativeHandlers.loopRef,maxRequestBytes:bridge.limits.maxRequestBytes};break;
             case 'tool':if(!object(params)||typeof params.name!=='string')fail('invalid_input','tool requires name and args.');if(params.name==='step')await applyRecoveryMarker();result=await nativeHandlers.call(params.name,params.args??{},controller.signal);break;
             case 'step': {
               await applyRecoveryMarker();
@@ -86,8 +88,8 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
             default: fail('invalid_method','Unknown bridge method.');
           }
           const output=JSON.stringify({ok:true,result})+'\n';
-          if(Buffer.byteLength(output)>1048576)fail('capacity','IPC response exceeds capacity.');
-          socket.end(output,()=>{if(rpc.method==='shutdown')void close();});
+          if(Buffer.byteLength(output)>maxResponseBytes)fail('capacity','IPC response exceeds capacity.');
+          socket.end(output,()=>{if(object(result)&&typeof result.id==='string')bridge.emit({type:'submission',id:result.id,reason:'ipc_written'});if(rpc.method==='shutdown')void close();});
         } catch(error) {socket.end(JSON.stringify({ok:false,error:{code:error instanceof NerveletError?error.code:'operation_failed',message:message(error).slice(0,1024)}})+'\n');}
       })();
     });
@@ -108,7 +110,7 @@ export async function serve(bridge:Bridge,options:{cwd?:string}={}):Promise<{end
   try {
     if(process.platform!=='win32')await chmod(path,0o600);
     await bridge.start();
-    await atomicWrite(addressFile(cwd),JSON.stringify({endpoint:path,token,epoch:bridge.epoch,pid:process.pid}));
+    await atomicWrite(addressFile(cwd),JSON.stringify({endpoint:path,token,epoch:bridge.epoch,pid:process.pid,maxRequestBytes,maxResponseBytes}));
     await atomicWrite(join(cwd,'.nervelet','profile.md'),handlers.instructions+'\n');
   } catch(error) {await close().catch(()=>{});throw error;}
   return {endpoint:path,close,closed};
@@ -120,7 +122,7 @@ export async function request<T=unknown>(rpc:RpcRequest,options:{cwd?:string;sig
   try {address=JSON.parse(await readBounded(addressFile(cwd),4096));}
   catch(error) {if((error as NodeJS.ErrnoException).code==='ENOENT')fail('unavailable','No bridge in this project. Start nervelet serve or demo.');throw error;}
   const payload=JSON.stringify({...rpc,token:address.token})+'\n';
-  if(Buffer.byteLength(payload)>65536)fail('capacity','IPC request exceeds capacity.');
+  if(Buffer.byteLength(payload)>(address.maxRequestBytes ?? 65536))fail('capacity','IPC request exceeds capacity.');
   return new Promise<T>((resolve,reject)=>{
     const socket=createConnection(address.endpoint);
     let input=Buffer.alloc(0),settled=false;
@@ -131,7 +133,7 @@ export async function request<T=unknown>(rpc:RpcRequest,options:{cwd?:string;sig
     socket.setTimeout(options.timeoutMs??65000,()=>finish(new NerveletError('timeout','Bridge timed out. Reconcile any submitted commands.')));
     socket.once('connect',()=>socket.write(payload));socket.once('error',error=>finish(error));socket.once('close',()=>{if(!settled)finish(new Error('Bridge disconnected; command outcome may be unknown.'));});
     socket.on('data',chunk=>{
-      input=Buffer.concat([input,chunk]);if(input.length>1048576){finish(new NerveletError('capacity','IPC response exceeds capacity.'));return;}
+      input=Buffer.concat([input,chunk]);if(input.length>(address.maxResponseBytes ?? 1048576)){finish(new NerveletError('capacity','IPC response exceeds capacity.'));return;}
       const index=input.indexOf(10);if(index<0)return;
       try {
         const data=JSON.parse(input.subarray(0,index).toString('utf8'));

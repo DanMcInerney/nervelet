@@ -1,5 +1,7 @@
 # Codex integration
 
+**Emergency path:** The driver retains the accepted turn ID through interruption and joins the matching `turn/completed` notification before same-session resumption. Early and unrelated terminal notifications have separate deterministic fixtures. An RPC response is not terminal evidence. Actual native emergency tool/result pairing and latency remain unqualified; see [the implemented attention contract](../improvements.md).
+
 **v0.2 addition:** `nervelet/drivers/codex` implements managed App Server sessions, borrowed-client ownership, native recovery notifications and MCP tools. The installer export below keeps its original meaning. See [the driver contract](../v2.md) and [new qualification status](../validation.md). Deterministic protocol tests are not native parking, image or compaction proof.
 
 **Implemented:** `nervelet/codex`. **Partially qualified** on Codex CLI **0.144.0**: native startup hook, recovery observation and Stop worked. The full request-file/batch scenario was blocked by this host's Windows sandbox. [Evidence](../validation.md).

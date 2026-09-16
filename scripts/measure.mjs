@@ -22,7 +22,7 @@ const driver={capabilities:{name:'measurement-fake',mode:'managed',parking:true,
 const supervisor=new Supervisor(idleBridge,driver);const running=supervisor.run();await onPark;const idleAt=performance.now();
 const quietMs=Number(process.env.NERVELET_MEASURE_MS ?? 1000);if(!Number.isSafeInteger(quietMs)||quietMs<1000||quietMs>3600000)throw new Error('NERVELET_MEASURE_MS must be 1000..3600000.');
 const idleHeapSamples=[];
-while(performance.now()-idleAt<quietMs){global.gc?.();idleHeapSamples.push({atMs:Math.round(performance.now()-idleAt),heapUsed:process.memoryUsage().heapUsed,rss:process.memoryUsage().rss});await delay(Math.min(10000,quietMs-(performance.now()-idleAt)));}
+while(performance.now()-idleAt<quietMs){global.gc?.();idleHeapSamples.push({atMs:Math.round(performance.now()-idleAt),heapUsed:process.memoryUsage().heapUsed,rss:process.memoryUsage().rss});await delay(Math.max(1,Math.min(10000,quietMs-(performance.now()-idleAt))));}
 global.gc?.();idleHeapSamples.push({atMs:Math.round(performance.now()-idleAt),heapUsed:process.memoryUsage().heapUsed,rss:process.memoryUsage().rss});
 const quietCalls=calls-1;idleEnvironment.store.push('fixture','wake');await running;
 async function disk(path){let total=0;for(const e of await readdir(path,{withFileTypes:true})){const p=join(path,e.name);total+=e.isDirectory()?await disk(p):(await stat(p)).size;}return total;}

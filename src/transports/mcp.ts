@@ -7,7 +7,7 @@ import { fail, message } from '../util.ts';
 /** Use this dispatcher from an existing authenticated host server; no extra service needed. */
 export function mcpTools(handlers:Handlers) {
   return {list:()=>structuredClone(handlers.tools),async call(name:string,args:unknown,signal?:AbortSignal):Promise<ToolResult> {
-    try{return toolResult(await handlers.call(name,args,signal));}
+    try{const value=await handlers.call(name,args,signal);const result=toolResult(value);handlers.submitted?.(value);return result;}
     catch(error){return {isError:true,content:[{type:'text',text:JSON.stringify({error:{code:(error as {code?:string}).code ?? 'operation_failed',message:message(error).slice(0,1024)}})}]};}
   }};
 }
@@ -39,7 +39,7 @@ export async function serveLocalMcp(handlers:Handlers):Promise<{url:string;token
     if(req.url!=='/mcp' || req.method!=='POST'){res.writeHead(405).end();return;}
     if(active.size>=16){res.writeHead(429).end();return;}
     let size=0;const chunks:Buffer[]=[];
-    for await(const chunk of req){size+=chunk.length;if(size>65536){res.writeHead(413).end();return;}chunks.push(chunk);}
+    for await(const chunk of req){size+=chunk.length;if(size>Math.max(65536,(handlers.maxRequestBytes ?? 16384)+4096)){res.writeHead(413).end();return;}chunks.push(chunk);}
     const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const server=await createMcpServer(handlers);active.add(server);
     const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});

@@ -64,7 +64,9 @@ async function main():Promise<void> {
     let input:StepRequest;
     if(values.request) {
       if(values.seen!==undefined||values['wait-ms']!==undefined)fail('invalid_input','Use --request separately from step flags.');
-      input=JSON.parse(values.request==='-'?await stdin(16384):await readBounded(resolve(cwd,values.request),16384));
+      const metadata=await request<{maxRequestBytes?:number}>({method:'tools'},{cwd});
+      const limit=metadata.maxRequestBytes ?? 16384;
+      input=JSON.parse(values.request==='-'?await stdin(limit):await readBounded(resolve(cwd,values.request),limit));
     } else input={...(values.seen?{seen:values.seen}:{}),...(values['wait-ms']!==undefined?{waitMs:Number(values['wait-ms'])}:{})};
     result=await request({method:'step',params:input},{cwd});
   } else if(command==='cancel')result=await request({method:'cancel',params:{id:positionals[1]}},{cwd});
