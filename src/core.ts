@@ -153,7 +153,7 @@ export class Bridge {
   /** Failed final formatting/output keeps evidence and gates effects; never acknowledges mail. */
   failSubmission(id:string,error:unknown):void {
     const delivery=this.deliveries.get(id);
-    if(delivery && !delivery.submitted && delivery.generation===this.generation && delivery.attentionId===this.attentionState?.id)
+    if(delivery?.attentionId && !delivery.submitted && delivery.generation===this.generation && delivery.attentionId===this.attentionState?.id)
       this.failAttention(delivery.attentionId!,error);
   }
   /** Only waits when a current capsule was assembled for host submission.
@@ -218,7 +218,7 @@ export class Bridge {
     this.changes.notify();
   }
   failAttention(id:string,error:unknown):void {
-    if(this.stopped || this.attentionState?.id!==id)return;
+    if(this.stopped || !this.attentionState || this.attentionState.id!==id)return;
     this.attentionState.status='fault';this.fault=`attention_fault: ${message(error).slice(0,256)}`;
     this.operations.abort(new Error(this.fault));this.changes.notify();
   }

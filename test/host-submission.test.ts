@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { Bridge, settleEmergency, type Environment } from '../src/index.ts';
 import { attention, deferred, evidence, Feed } from './attention-fixture.ts';
 
+test('ordinary failed host output needs no attention state and retains unread evidence',async()=>{
+  const feed=new Feed(),bridge=new Bridge(feed,'Ordinary goal',{submission:'host'});
+  await bridge.start();feed.store.push('notice',{value:1});
+  const bundle=await bridge.step({schemaVersion:2});
+  assert.doesNotThrow(()=>bridge.failSubmission(bundle.id,new Error('failed output')));
+  assert.equal(bridge.attention(),undefined);assert.equal(feed.store.snapshot(0).events.length,1);
+  assert.ok((await bridge.step({schemaVersion:2})).events?.length);await bridge.close();
+});
+
 async function fixture() {
   const feed=new Feed();
   const bridge=new Bridge(feed,'Exact original goal',{attention,submission:'host'});
