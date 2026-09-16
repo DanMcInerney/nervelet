@@ -1,5 +1,7 @@
 # Claude Code integration
 
+**Emergency path:** Streaming inputs carry UUIDs. Attention-enabled sessions require a matching result `user_message_uuid`; supported intentional abort reasons are distinct from budget/permission errors. Older or uncorrelated result producers fault explicitly. These are injected SDK protocol fixtures, not actual native interruption qualification. See [the attention contract](../improvements.md).
+
 **v0.2 addition:** `nervelet/drivers/claude-code` implements the official TypeScript Agent SDK with one persistent streaming query, explicit permissions, in-process MCP and recovery hooks. The installer export below remains compatible. See [the driver contract](../v2.md) and [new qualification status](../validation.md). Its native behavior is not qualified by the historical CLI run below.
 
 **Implemented:** `nervelet/claude-code`. Live basic-loop test passed on Claude Code **2.1.270**. [Evidence and limits](../validation.md).

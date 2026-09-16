@@ -1,12 +1,39 @@
 # Validation
 
-**2026-09-15 · v0.2 TypeScript refactor.** These checks establish only the behavior described here. [Implementation and limits](v2.md).
+**2026-09-16 · observation/attention improvements.** These checks establish only the behavior described here. [Current implementation and limits](improvements.md) · [v0.2 embedding contract](v2.md).
+
+## Current local checks and measurements
+
+Started with a clean tree at `2a806a61b5d9cc2dc48029bb9818bd228c8aba25`; `npm ci` and the **57-test baseline** passed. The expanded local suite has **89 tests**. Build, `npm test`, `npm run typecheck`, isolated `npm run check:package`, `npm run check:docs`, and `git diff --check` pass on Windows with Node 24.15.0 / npm 11.12.1. This is local evidence; the older CI run below does not validate these changes. Dependencies were not upgraded.
+
+New fixtures cover API-only emergency requests; continuous samples during blocked inference with zero ordinary interruptions; same-goal resumption without overlap; held waits, captures, uncertain admission, asynchronous recovery assembly, natural completion, parked/closing turns; Stop/closure/domain-death/goal-change precedence; generation checks after replacement acknowledgement; rearm/cooldown/interrupt budgets; coalescing and bounded capsules; FIFO backlog acknowledgements; unsupported/failed interruption and termination deadlines. Codex and Claude have separate terminal-correlation fixtures. Large Unicode/escaped commands cross core, handler, IPC and local HTTP MCP paths. Reference packing checks compare included events and exact final JSON/tool-result bytes. Existing tool-pairing, serial, CLI and six-actor isolation fixtures remain in the suite.
+
+During development the original suite caught four compatibility failures involving Stop/goal-transition snapshots and legacy recovery rendering. Those regressions were corrected. An initial measurement also emitted a negative-timer warning; its sleep is now clamped and the repeat run completed without it. No native inference or DroneRTS gameplay was run; **native emergency interruption and actual tool/result pairing across interruption remain unqualified**.
+
+Reproduce with `npm run measure:packing` and `npm run measure`. Generated records stay in ignored `.runtime/`. Representative local results:
+
+| Measurement | Result and interpretation |
+| --- | --- |
+| 64-event candidate-packing work | 64 event encodes versus 2,080 event visits in the former growing-bundle loop; both also perform final verification |
+| Materialized serialized bytes per fixture bundle | 48,427 versus 829,980 (94.17% less); a string-allocation work proxy, not measured allocator calls |
+| 1,000 complete new Bridge observations of that fixture | 319 ms wall / 391 ms process CPU; includes runtime/JIT work, with no old/new CPU comparison |
+| Packing workload heap | 7,528,208 → 7,696,864 bytes after GC; sampled peak 12,333,888; RSS 63,057,920 |
+| 3,000 acknowledged streaming observations | 886 ms; about 0.57 MB post-GC heap growth |
+| Streaming workload event-loop p99 / maximum | 25.2 / 25.2 ms |
+| Simulated Stop while parked | 1.34 ms |
+| About one second parked with streaming samples | Zero periodic fake-driver turns, one event-triggered wake |
+| Core-only independent installation | About 1.67 MB, six packages; no optional SDK/MCP/serial runtime imports |
+| Model latency, useful emergency response, tokens, cost, native process RAM | Unavailable; no model/native session was launched |
+
+Counts and bytes are workload-specific; timestamps can change a few bytes between runs. CPU/heap results include allocator/JIT noise and do not establish leak freedom or reduced model latency. Independent installation checks use the existing package version, with archive identity and installation evidence written to ignored `.runtime/package-check.json`. Package version and dependencies remain unchanged; no tag, release or npm publication is part of these changes. No generated evidence or dependencies belong in Git.
+
+Remaining qualification: actual Codex `turn/completed` and Claude UUID/abort-reason behavior with paired tools, long sessions, image understanding, compaction, application-specific failure policies and deployed resource/isolation limits. The API binding explicitly reports active emergency interruption unsupported. The host still owns emergency selection, reliable source events, physical job policy and mission completion. No wait-snapshot hint, new sensor store, background model or second actor supervisor was added.
 
 ## v0.2 checks and versions
 
 Starting revision: `af0c1bfc3514aa8096eb2b7ba1fba0b1b7f92edd`. The starting tree already had modified `AGENTS.md`/`README.md` and untracked `NEXT-DESIGN.md`/`docs/next/`. Those changes were preserved and the handoff received explicit implementation-status annotations. Baseline: **28/28 tests passed** before implementation.
 
-Current local suite: **57/57 passing tests**, including all original tests. `npm ci`, `npm test`, `npm run typecheck` (source, tests and examples), `npm run check:package`, `npm run check:docs`, and `git diff --check` pass. [GitHub Actions run 35031618314](https://github.com/DanMcInerney/nervelet/actions/runs/35031618314) also passed installation, tests, types, documentation and isolated package checks on both Ubuntu and Windows for implementation commit `b529f3732660855196b92c446420be73e6001215`. No paid inference, robots, DroneRTS matches or live sessions were used.
+Historical v0.2 local suite: **57/57 passing tests**, including all original tests. `npm ci`, `npm test`, `npm run typecheck` (source, tests and examples), `npm run check:package`, `npm run check:docs`, and `git diff --check` pass. [GitHub Actions run 35031618314](https://github.com/DanMcInerney/nervelet/actions/runs/35031618314) also passed installation, tests, types, documentation and isolated package checks on both Ubuntu and Windows for implementation commit `b529f3732660855196b92c446420be73e6001215`. No paid inference, robots, DroneRTS matches or live sessions were used.
 
 | Component | Local version/evidence |
 | --- | --- |

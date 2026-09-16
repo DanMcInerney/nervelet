@@ -1,106 +1,193 @@
 # Nervelet
 
-**A small nervous system for coding agents.**
+**The world doesn't pause while your agent thinks.**
 
-Connect one native or API/local-model agent to continuously changing sensors, APIs or a simulation. Embed the TypeScript Bridge directly, or use the existing CLI. Environments own execution; native harnesses own reasoning; one optional supervisor owns continuation.
+A sensor keeps streaming. An API job finishes. A simulated vehicle keeps moving. Meanwhile, your coding agent is reasoning, editing a file, or compacting its conversation.
 
-**v0.2:** Shared handlers, conditional waits and managed parking, compact recovery, acknowledged events, typed images, MCP, and modular Codex, Claude Code and API drivers. The CLI, serial adapter and installer entry points remain compatible. [Validation](docs/validation.md) records tests and remaining native/hardware qualification.
+Nervelet connects that agent to a **continuous environment**. It keeps acquisition and execution independent of inference, then delivers compact, dated observations at explicit tool boundaries.
 
-**Implemented handoff:** [NEXT-DESIGN.md](NEXT-DESIGN.md) is the accepted design. [Embedding and drivers](docs/v2.md) describes the implementation and limitations. Python and the background engineer remain unimplemented optional follow-ons. DroneRTS gameplay and live sessions are outside this refactor.
+An embeddable TypeScript library with a local CLI, MCP transport, and native Codex, Claude Code, and API/local-model drivers. One operator per bridge. Your application defines the world.
 
 ```mermaid
 flowchart LR
-    A["One native coding agent"] <-->|"Shell: nervelet step"| B["Nervelet bridge"]
-    B <-->|"Continuous I/O"| D["Device, API or simulation"]
-    A <--> W["Native scripts and files"]
+    A["Agent<br/>Reason · write code · use tools"] <-->|"step: observe, command, wait"| B["Nervelet Bridge<br/>Exact goal · receipts · recovery"]
+    B <-->|"Snapshot / command admission"| E["Your environment adapter"]
+    E --- S["Latest samples<br/>Replace older values"]
+    E --- Q["Reliable events<br/>Keep until acknowledged"]
+    E --- J["Domain jobs<br/>Continue between model calls"]
+    W["APIs · event feeds · simulations · devices"] <-->|"Continuous I/O"| E
 ```
 
-## The small version
+**[Try it](#try-it-without-a-model)** · **[Embed it](#embed-it-in-your-process)** · **[Driver guide](docs/v2.md)** · **[Tests and limits](docs/validation.md)**
 
-- **One persistent bridge** collects data while the model thinks.
-- **One step command** observes, waits, or submits compatible commands together.
-- **One compact result** contains the exact goal, dated data, own status, running jobs and unread events.
-- **Small harness modules** install instructions and recovery hooks. Native sessions, execution and compaction stay native.
-- **Plain files** preserve essential instructions and notes across compaction.
+## The interesting part is between tool calls
 
-Use the native shell tool for the compatible scalar CLI path. Managed native drivers use MCP; API/local models call the same handlers directly. Each Bridge has one operator. Independent instances can share a TypeScript host.
+`accepted` is not `completed`. A new JSON response is not necessarily a new sensor reading. A lost tool result does not mean its command failed.
 
-DroneRTS is the canonical application; its vehicle fields and game rules stay outside the core.
+Nervelet keeps those distinctions explicit:
 
-## Try the simulated bench
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant B as Bridge
+    participant E as Environment
+    A->>B: step: start a timed movement
+    B->>E: Validate and admit command c1
+    E-->>B: Accepted; job j1
+    B-->>A: Receipt + dated state; j1 running
+    par Agent works
+        Note over A: Reason, edit files, use native tools
+    and Environment continues
+        E->>E: Acquire samples; execute j1
+        E->>E: Finish j1; retain completion event
+    end
+    A->>B: step: acknowledge previous bundle
+    B->>E: Get current state and unread events
+    E-->>B: Latest samples; j1 completed
+    B-->>A: Exact goal + state + completion event
+    Note over B,E: Event remains unread until its bundle is acknowledged
+```
 
-Requires Node 24+, Git and an installed, signed-in coding harness. From this checkout:
+A fast sensor does not require a fast model loop. Replaceable samples coalesce. Reliable events keep their identity and FIFO order. Managed operators can park until an event, job completion, threshold, or review deadline—without periodic model calls while parked.
+
+## Try it without a model
+
+Requires **Node 24+**. Install from source; this package has not been published to npm.
 
 ```sh
+git clone https://github.com/DanMcInerney/nervelet.git
+cd nervelet
 npm ci
 npm run build
+node dist/cli.js demo
+```
+
+In another terminal, from the same checkout:
+
+```sh
+node dist/cli.js step
+```
+
+You'll get the exact goal, simulated state, dated temperature samples, and startup recovery instructions. Repeat the command to see the environment changing independently. The simulated bench samples every 50 ms; no hardware or inference is involved.
+
+```sh
+node dist/cli.js shutdown
+```
+
+To attach a signed-in **Claude Code** session, run this from the checkout:
+
+```sh
 npm link
 cd examples/demo
 nervelet init --harness claude-code
 nervelet serve
 ```
 
-In another terminal, open the **same directory**, run `claude`, and ask:
+Open `claude` in another terminal in that same demo directory, then ask:
 
-> Follow the Nervelet goal. Keep observing with bounded steps until the goal is done, then stop.
+> Follow the Nervelet goal. Observe, run the bench commands, and keep checking until the goal is done. Then stop.
 
-The demo samples simulated temperature every 50 ms and supports an LED and timed movement. No hardware is connected. `nervelet demo` also starts this environment without a config file.
+The installer adds project instructions and recovery hooks. Native permissions still apply. [Codex setup](docs/harnesses/codex.md) and [managed driver examples](docs/v2.md) cover the other paths; driver qualification varies.
 
-For Codex, use `nervelet init --harness codex`, then `codex --enable hooks`. Review project/hook trust and native permissions. [Codex qualification is partial](docs/harnesses/codex.md): startup and observation passed; this Windows host blocked native file writes.
+## Embed it in your process
 
-## The step
+No extra service is required. This example runs from the built checkout using the package's own exports:
 
-```sh
-nervelet step
-nervelet step --seen RECEIVED_BUNDLE_ID --wait-ms 2000
-nervelet step --request request.json
-nervelet cancel JOB_ID
-nervelet goal --file new-goal.txt
-nervelet stop
-nervelet shutdown
-```
+```js
+import { Bridge } from 'nervelet';
+import { createDemoEnvironment } from 'nervelet/demo';
 
-Write `request.json` using the **actual** previous bundle ID, goal version and next command ID:
-
-```json
-{
-  "seen": "RECEIVED_BUNDLE_ID",
-  "goalVersion": 1,
-  "commands": [
-    {"id":"c1","kind":"set_led","args":{"on":true}},
-    {"id":"c2","kind":"move","args":{"durationMs":200}}
-  ]
+const bridge = new Bridge(createDemoEnvironment(), 'Turn on the bench LED.');
+await bridge.start();
+try {
+  const first = await bridge.step();
+  const next = await bridge.step({
+    seen: first.id,                    // acknowledge what was received
+    goalVersion: first.goal.version,   // act on this exact goal
+    commands: [{
+      id: first.nextCommandId,
+      kind: 'set_led',
+      args: { on: true }
+    }]
+  });
+  console.log(next.results);           // [{ id: 'c1', status: 'completed' }]
+} finally {
+  await bridge.close();
 }
 ```
 
-One batch returns individual admissions and one observation. `accepted` means a job started; a later step reports completion. A finished shell call can leave the device moving. Native file tools do not refresh sensors.
+An agent makes those calls through the CLI, MCP, or `createHandlers(bridge)`. The embedding example makes them directly so you can inspect the contract without a model.
 
-## Small, recoverable context
+Replace the demo with your own `Environment`: a canonical command profile, continuous acquisition, snapshots, command admission, and cancellation. There are no mandatory camera, pose, cargo, actuator, or simulation-clock fields. An API-only environment is a first-class use case.
 
-Every step repeats compact current state and the exact goal. Startup/resume/compaction hooks require a fresh observation. That recovery bundle adds the exact operating profile, active job arguments and optional `working.md` note. Acknowledging its ID enables commands. Old sensor positions never become durable facts.
+| Integration | How it connects |
+| --- | --- |
+| Existing native session | Shell calls to the CLI; project instructions and recovery hooks |
+| Managed Codex / Claude Code | Native session drivers with MCP tools; harness keeps its workspace, tools and compaction |
+| API or local model | Explicit endpoint and model; shared handlers, no MCP required |
+| Existing application host | Embed the Bridge; retain your actor ownership and process |
 
-Native drivers keep the harness's session, workspace and compaction. Managed parking waits without periodic model calls; attached CLI sessions have no guaranteed idle wake. Bridge restarts create a new epoch; in-memory events and receipts are not persisted.
+Use the optional `Supervisor` when you need a bounded owner for continuation and parking. If your application already owns the actor, keep that owner. The core imports require neither native SDK nor MCP nor serial bindings.
 
-## Build an integration
+## What the bridge remembers—and what it doesn't guess
 
-- [Design](DESIGN.md): the loop, ownership, batches, freshness and recovery.
-- [Adapter API](docs/api.md): configuration, embedding and ownership.
-- [v0.2 embedding and drivers](docs/v2.md): shared tools, parking, images, native/API drivers and compatibility.
-- [Arduino example](docs/arduino.md): firmware, serial setup and protocol.
-- [Integration decision](docs/architecture-options.md): why a CLI and bridge.
-- [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md)
-- [How DroneRTS works today](docs/dronerts.md)
-- [Development instructions](AGENTS.md)
+| Problem | Contract |
+| --- | --- |
+| The agent loses context | Repeat the exact goal and compact current state. Recovery adds canonical instructions, active job arguments, and an optional workspace note. Commands wait for recovery acknowledgement. |
+| A response gets lost | Redeliver unread events with stable IDs. `seen` acknowledges only events included in that bundle. |
+| A command times out | Retain an uncertain receipt. Reconcile against executor-owned records; never silently replay the effect. |
+| Observations get old | Keep acquisition, receipt, and delivery times distinct. Report invalid or missing evidence explicitly. |
+| The world is noisy | Bound queues, receipts, payloads, waits, and execution records. Report backpressure instead of silently dropping reliable events. |
+| The agent needs to stop | Stop and cancellation bypass ordinary waits and acquisition queues. The environment owns job cancellation and physical control. |
 
-The six-pilot deterministic fixture demonstrates the DroneRTS integration shape. Actual gameplay migration and native image understanding remain unqualified. This repository has not been published to npm; install from a built local checkout for a separate project.
+Native file reads and script edits do **not** refresh observations. Ordinary chat does **not** replace the received goal. A bridge restart creates a new epoch: in-memory events and receipts are **not crash-durable**.
 
-## Check
+## When something cannot wait
+
+Optional **host-authorized emergency attention** lets an application bring urgent evidence to the same agent on the same goal. It is disabled by default; ordinary samples never trigger it.
+
+```mermaid
+flowchart TD
+    R["Trusted host requests attention<br/>Bounded, dated evidence"] --> G["Gate new effects immediately<br/>Advance generation; invalidate old operations"]
+    G --> D{"Can an open step<br/>deliver the evidence?"}
+    D -->|"Yes"| B["Settle pending work<br/>Return fresh recovery + urgent evidence"]
+    D -->|"No; native turn is active"| I["Request supported interruption"]
+    I --> T["Wait for matching terminal event<br/>and settled tool/result work"]
+    T --> N["Same session, same goal<br/>Submit fresh recovery + urgent evidence"]
+    D -->|"Already parked"| N
+    B --> A["Agent acknowledges fresh recovery<br/>Current-generation commands may proceed"]
+    N --> A
+    T -->|"Failure or deadline"| F["Fault transition<br/>Keep new effects gated"]
+```
+
+An interrupt acknowledgement is not proof that the old turn ended. Nervelet joins that turn before replacement, coalesces bursts, and enforces transition, interruption, age, cooldown, and termination bounds. The urgent evidence can bypass a mail backlog **without acknowledging the unseen original event**. Requesting attention does not itself cancel domain jobs.
+
+Native interruption is covered by protocol fixtures; **actual Codex/Claude emergency sessions remain unqualified**. Active-turn emergency interruption is unsupported by the API driver. [Full attention contract and host integration](docs/improvements.md).
+
+## Small enough to inspect
+
+- **89 deterministic tests** cover the bridge, CLI, serial protocol, MCP, drivers, recovery, interruption races, and six isolated simulated actors.
+- **About 1.67 MB / six packages** for an isolated core-only installation, excluding Node and optional integrations.
+- **64 event encodes instead of 2,080 repeated event visits** in the candidate-packing phase of a 64-event fixture. The final output is still verified; FIFO and acknowledgement semantics stay the same.
+
+Those are measured fixture results, not model-speed or autonomy claims. [Reproduction, measurements, and qualification history](docs/validation.md) include the remaining work: real native interruption, sustained sessions, image understanding, repeated native compaction, and physical hardware. A historical Claude CLI run passed the basic simulated loop; Codex CLI qualification is partial.
 
 ```sh
 npm test
-npm run check:package
+npm run typecheck
 npm run check:docs
-npm run measure
+npm run check:package
+npm run measure:packing
 ```
 
-Builds and runs deterministic bridge, CLI, hook, serial, MCP, driver and embedding tests. Package checks install an isolated core without optional peers; measurement uses a fake driver. Native inference tests are explicit opt-in commands described in [validation](docs/validation.md).
+These checks require no inference or hardware. Native smoke tests are separate and opt-in.
+
+## Go deeper
+
+- [Embedding, waits, images, drivers and ownership](docs/v2.md)
+- [Payload limits, efficient packing and emergency attention](docs/improvements.md)
+- [Environment adapter API](docs/api.md)
+- [Original design and its tradeoffs](DESIGN.md)
+- [Claude Code](docs/harnesses/claude-code.md) · [Codex](docs/harnesses/codex.md) · [Arduino](docs/arduino.md)
+- [DroneRTS](docs/dronerts.md): the canonical application; its game rules stay outside the core. Gameplay migration is separate work.
+- [Development instructions](AGENTS.md) · [Implementation handoff](NEXT-DESIGN.md)

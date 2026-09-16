@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, stat, realpath, rm } from
 import { tmpdir } from 'node:os';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const npm=process.env.npm_execpath;if(!npm)throw new Error('Run through npm run check:package.');
 const run=(args,cwd=process.cwd())=>execFileSync(process.execPath,[npm,...args],{cwd,encoding:'utf8',windowsHide:true});
@@ -19,17 +20,20 @@ try {
   const script=`import assert from 'node:assert/strict';
 import {registerHooks} from 'node:module';
 registerHooks({resolve(specifier,context,next){if(/@modelcontextprotocol|@anthropic-ai|serialport/.test(specifier))throw new Error('Unexpected optional runtime import: '+specifier);return next(specifier,context);}});
-const {Bridge,ObservationStore,serve,request,defineConfig}=await import('nervelet');
+const {Bridge,ObservationStore,serve,request,defineConfig,settleEmergency}=await import('nervelet');assert.equal(typeof settleEmergency,'function');
 const {createDemoEnvironment}=await import('nervelet/demo');
 const {createSerialEnvironment}=await import('nervelet/serial');assert.equal(typeof createSerialEnvironment,'function');
 const {ApiDriver}=await import('nervelet/drivers/api');assert.equal(typeof ApiDriver,'function');
+const {CodexDriver}=await import('nervelet/drivers/codex');assert.equal(typeof CodexDriver,'function');
+const {ClaudeCodeDriver}=await import('nervelet/drivers/claude-code');assert.equal(typeof ClaudeCodeDriver,'function');
+const {mcpTools}=await import('nervelet/mcp');assert.equal(typeof mcpTools,'function');
 const {installCodex}=await import('nervelet/codex');const {installClaudeCode}=await import('nervelet/claude-code');
 assert.equal(typeof serve,'function');assert.equal(typeof request,'function');assert.equal(typeof defineConfig,'function');assert.equal(typeof installCodex,'function');assert.equal(typeof installClaudeCode,'function');assert.ok(new ObservationStore());
 const b=new Bridge(createDemoEnvironment(),'Packed smoke');await b.start();const initial=await b.step();const result=await b.step({seen:initial.id,goalVersion:1,commands:[{id:'c1',kind:'sample',args:{}}]});assert.equal(result.results[0].status,'completed');await b.close();
 `;
   await writeFile(join(directory,'check.mjs'),script);execFileSync(process.execPath,['check.mjs'],{cwd:directory,stdio:'inherit',windowsHide:true});
   const installed=await readdir(join(directory,'node_modules'),{withFileTypes:true});
-  const result={node:process.version,platform:process.platform,archiveBytes:pkg.size,unpackedPackageBytes:pkg.unpackedSize,installedCoreBytes:await disk(join(directory,'node_modules')),installedCorePackages:installed.filter(p=>p.isDirectory()&&!p.name.startsWith('.')).length,optionalPeersAbsent:true};
+  const result={node:process.version,platform:process.platform,baseRevision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim(),worktreeDirty:!!execFileSync('git',['status','--porcelain'],{encoding:'utf8',windowsHide:true}).trim(),version:pkg.version,filename:pkg.filename,sha256:createHash('sha256').update(await readFile(resolve('.runtime',pkg.filename))).digest('hex'),integrity:pkg.integrity,shasum:pkg.shasum,archiveBytes:pkg.size,unpackedPackageBytes:pkg.unpackedSize,installedCoreBytes:await disk(join(directory,'node_modules')),installedCorePackages:installed.filter(p=>p.isDirectory()&&!p.name.startsWith('.')).length,optionalPeersAbsent:true};
   await writeFile('.runtime/package-check.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result,null,2));
 } finally {
   const actual=await realpath(directory),child=relative(parent,actual);

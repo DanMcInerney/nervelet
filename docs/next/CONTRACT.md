@@ -141,6 +141,8 @@ In-memory mode promises no crash durability. An optional local store persists co
 
 ## 7. Interrupts and bounds
 
+**Current implementation:** Optional same-goal, trusted-host emergency attention is implemented with deterministic fixtures. It is disabled by default; native interruption/resumption remains unqualified. [Implemented APIs, limits and remaining host responsibilities](../improvements.md) describe the bounded capsule, generation gate, settlement and explicit rearm behavior. Ordinary streaming never initiates interruption.
+
 Wake/steer, interrupt inference, and cancel domain work are separate. An urgent authorized stop or received goal change gates stale effects immediately, cancels affected work and requests interruption/recovery. Ordinary chat does not cancel jobs. Goal, epoch and ownership checks also cover delayed callbacks and routines.
 
 Report `stopping` or `unknown` until physical outcome is established. Never hold admission locks across inference, encoding or device waits. An AbortSignal does not terminate arbitrary I/O or stop synchronous JavaScript: use finite device timeouts, explicit cancellation or a terminable worker. Keep encoding and CPU-heavy work off the shared Node control path. Environment watchdogs run independently of the model.

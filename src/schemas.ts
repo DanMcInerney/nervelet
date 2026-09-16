@@ -17,7 +17,7 @@ export const stepSchema = {
   $schema: DIALECT, type: 'object', additionalProperties: false,
   properties: {
     schemaVersion: { const: 2 }, loopRef: text, seen: text,
-    goalVersion: { type: 'integer', minimum: 0 }, waitMs: { type: 'integer', minimum: 0 },
+    goalVersion: { type: 'integer', minimum: 0 }, generation: { type: 'integer', minimum: 1 }, waitMs: { type: 'integer', minimum: 0 },
     checkpoint: { type: 'string' }, wait: waitSchema,
     commands: { type: 'array', items: {
       type: 'object', additionalProperties: false, required: ['id','kind','args'],

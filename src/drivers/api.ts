@@ -24,7 +24,7 @@ export class ApiDriver implements AgentDriver {
     boundedText(options.model,256,'Explicit API model');boundedText(options.provider,128,'Explicit provider');
     const url=new URL(options.endpoint);if(!['http:','https:'].includes(url.protocol))fail('invalid_config','HTTP endpoint required.');
     this.options=options;
-    this.capabilities={name:`api:${options.provider}`,mode:'managed',parking:true,toolHoldMs:0,images:options.images?'supported':'unsupported',recovery:'events',usage:['modelCalls','tokens','cost'],qualification:'HTTP protocol fixtures only; provider-specific behavior must be qualified.'};
+    this.capabilities={name:`api:${options.provider}`,mode:'managed',parking:true,toolHoldMs:0,images:options.images?'supported':'unsupported',recovery:'events',usage:['modelCalls','tokens','cost'],interruption:'unsupported',qualification:'HTTP protocol fixtures only; active emergency interruption/resumption is not supported by this binding.'};
   }
   async open(context:DriverContext):Promise<void>{this.context=context;this.history=[{role:'system',content:context.handlers.instructions+(this.options.encoding==='json-action'?'\nReturn exactly one JSON object {op,args}. Allowed operations and schemas: '+JSON.stringify(context.handlers.tools):'')}];}
   private content(contents:ToolContent[]):unknown {
