@@ -14,9 +14,9 @@ const parent=await realpath(tmpdir()),directory=await mkdtemp(join(parent,'nerve
 async function disk(path){let total=0;for(const entry of await readdir(path,{withFileTypes:true})){const file=join(path,entry.name);total+=entry.isDirectory()?await disk(file):(await stat(file)).size;}return total;}
 try {
   await writeFile(join(directory,'package.json'),JSON.stringify({private:true,type:'module'}));
-  run(['install','--omit=dev','--omit=optional','--ignore-scripts','--no-audit','--no-fund',resolve('.runtime',pkg.filename)],directory);
+  run(['install','--omit=dev','--ignore-scripts','--no-audit','--no-fund',resolve('.runtime',pkg.filename)],directory);
   const lock=JSON.parse(await readFile(join(directory,'package-lock.json'),'utf8'));
-  assert.ok(!Object.keys(lock.packages).some(p=>p==='node_modules/@anthropic-ai/claude-agent-sdk'||p==='node_modules/@modelcontextprotocol/sdk'));
+  assert.ok(!Object.keys(lock.packages).some(p=>p==='node_modules/@anthropic-ai/claude-agent-sdk'||p==='node_modules/@modelcontextprotocol/sdk'||p==='node_modules/serialport'));
   const script=`import assert from 'node:assert/strict';
 import {registerHooks} from 'node:module';
 registerHooks({resolve(specifier,context,next){if(/@modelcontextprotocol|@anthropic-ai|serialport/.test(specifier))throw new Error('Unexpected optional runtime import: '+specifier);return next(specifier,context);}});

@@ -123,3 +123,5 @@ This is protocol-tested, not native interruption qualification.
 Reconciliation can invalidate an assembled recovery generation; settlement then
 joins the native turn before requesting fresh replacement input, within the same
 termination and interruption budgets.
+
+The serial adapter declares serialport as an optional peer, like the other host integrations. A normal core install no longer installs native serial bindings. Install serialport explicitly when selecting that adapter; package qualification checks the default install without omit flags.
