@@ -1,0 +1,28 @@
+{
+  "name": "@nervelet/robot-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "node server.ts",
+    "build": "vite build",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "experiment": "node experiments/run.ts",
+    "codex": "node controllers/run-codex.ts"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "nervelet": "file:../..",
+    "node-mavlink": "2.3.0",
+    "three": "0.186.0",
+    "vite": "8.3.0"
+  },
+  "overrides": { "xml2js": "0.6.2" },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/three": "^0.183.0",
+    "typescript": "~5.9.3"
+  }
+}

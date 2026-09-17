@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Nervelet / Robot World</title></head>
+<body><div id="app">
+  <header><div class="brand"><span class="mark">n.</span><div><strong>NERVELET</strong><span>ROBOT WORLD · EXPERIMENTAL LAB</span></div></div><div class="top-status"><i id="connection"></i><span id="connection-label">CONNECTING</span><span class="divider"></span><span>LOCAL SIMULATION</span></div></header>
+  <main>
+    <aside class="left-panel">
+      <div class="eyebrow">01 / EXPERIMENT</div><h1>A world that<br>keeps moving.</h1><p class="intro">Observe, decide, act. Explore what happens between agent turns.</p>
+      <label for="scenario">Robot configuration</label><select id="scenario"><option value="drone">Quadrotor · MAVLink v2</option><option value="rover">Ground rover · Direct</option></select>
+      <label for="policy">Decision controller</label><select id="policy"><option value="scripted">Scripted / no inference</option><option value="delayed">Scripted / 700 ms thinking</option><option value="jev" disabled>Jev / configure server to enable</option></select>
+      <div class="controller-note">Native Codex preset: Luna · xhigh<br><span>Available through the opt-in CLI runner.</span></div>
+      <div class="actions"><button id="run" class="primary">▶ Run route</button><button id="hold">■ Hold</button></div>
+      <div class="actions secondary"><button id="pause">Ⅱ Pause world</button><button id="step">+1 tick</button><button id="reset">↺ Reset</button></div>
+      <div class="rule"></div><div class="eyebrow">02 / SENSOR LAB</div>
+      <label for="sensor">Mounted sensor</label><select id="sensor"><option value="odometry">Odometry · 20 Hz</option><option value="range">Range ring · 10 Hz</option><option value="depth">Depth camera · 5 Hz</option></select>
+      <label for="latency">Delivery delay <output id="latency-value">0 ms</output></label><input type="range" id="latency" min="0" max="1500" step="50" value="0">
+      <label for="dropout">Dropout <output id="dropout-value">0%</output></label><input type="range" id="dropout" min="0" max="100" step="5" value="0">
+      <label for="noise">Position / range noise <output id="noise-value">0.00 m</output></label><input type="range" id="noise" min="0" max="100" step="5" value="0">
+      <button id="apply-sensor" class="wide">Apply sensor settings</button>
+      <div id="error" role="alert"></div><div class="footnote">Fixed-step Rapier physics. Simplified robot dynamics. No hardware connected.</div>
+    </aside>
+    <section class="stage"><div class="stage-top"><div><span class="eyebrow">LIVE WORLD</span><h2 id="world-name">Waypoint laboratory</h2></div><span class="pill" id="mode">READY</span></div>
+      <div id="viewport" aria-label="Interactive 3D robot world"></div>
+      <div class="view-tools"><button id="orbit" class="active">Orbit</button><button id="follow">Follow robot</button><label><input id="rays" type="checkbox" checked> Sensor rays</label></div>
+      <div class="world-caption"><span>Drag to orbit · Scroll to zoom</span><span>ENU / metres · Spectator view</span></div>
+      <div class="metrics"><div><span>SIMULATION TIME</span><strong id="sim-time">0.00 <small>s</small></strong></div><div><span>ROUTE PROGRESS</span><strong id="progress">0 <small>/ 3</small></strong></div><div><span>DECISION LATENCY</span><strong id="decision-time">— <small>ms</small></strong></div><div><span>CONTACTS</span><strong id="collisions">0</strong></div></div>
+    </section>
+    <aside class="right-panel"><div class="eyebrow">03 / LIVE INSTRUMENTS</div><h2>What the robot receives</h2><p class="muted">Mounted sensors only. This view separates observation from world truth.</p>
+      <div class="sensor-title"><span>DEPTH / +X FORWARD</span><span id="depth-age">—</span></div><canvas id="depth-canvas" width="240" height="120"></canvas><div class="depth-key"><span>Near</span><div></div><span>Far / no return</span></div>
+      <div id="sensor-list"></div><div class="rule"></div><div class="eyebrow">MOTION OWNER</div><div id="job">Holding position</div>
+      <div class="rule"></div><div class="eyebrow">MAVLINK / PROTOCOL</div><div id="protocol" class="code">Awaiting telemetry</div>
+      <div class="rule"></div><div class="event-title"><span class="eyebrow">EVENT TRACE</span><a href="/api/trace" download="robot-world-trace.json">Export ↗</a></div><div id="events"></div>
+    </aside>
+  </main>
+  <section id="cockpit" aria-label="Raw data cockpit">
+    <div class="cockpit-toolbar"><div><span class="eyebrow">04 / DATA COCKPIT</span><span id="capture-status" class="capture-status">LIVE</span></div>
+      <input id="log-search" type="search" aria-label="Search raw data" placeholder="Search every stream…">
+      <button id="freeze-cockpit">Freeze inspector</button><a id="export-diagnostics" href="/api/diagnostics/export" download="robot-world-diagnostics.json">Export retained data ↗</a>
+    </div>
+    <div id="cockpit-panels" class="cockpit-panels"></div>
+    <div class="cockpit-status"><span id="diagnostic-health">Connecting diagnostic streams…</span><span>Click a row to pin · S = simulation / W = elapsed wall time</span></div>
+  </section>
+  <footer><span><i></i> Nervelet bridge connected</span><span id="clock-note">60 Hz physics · wall clock and simulation clock tracked separately</span><span>TESTBED 0.2</span></footer>
+</div><script type="module" src="/web/main.ts"></script></body></html>
