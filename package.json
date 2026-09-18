@@ -76,6 +76,7 @@
     "LICENSE",
     "README.md",
     "DESIGN.md",
+    "PRINCIPLES.md",
     "NEXT-DESIGN.md",
     "docs/**/*.md"
   ],
