@@ -8,6 +8,8 @@ Nervelet connects that agent to a **continuous environment**. It keeps acquisiti
 
 An embeddable TypeScript library with a local CLI, MCP transport, and native Codex, Claude Code, and API/local-model drivers. One operator per bridge. Your application defines the world.
 
+Read the [design principles](PRINCIPLES.md) for ownership, continuous control and evidence requirements.
+
 ```mermaid
 flowchart LR
     A["Agent<br/>Reason · write code · use tools"] <-->|"step: observe, command, wait"| B["Nervelet Bridge<br/>Exact goal · receipts · recovery"]
